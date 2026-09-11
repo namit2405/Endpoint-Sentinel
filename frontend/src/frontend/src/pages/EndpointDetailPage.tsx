@@ -100,9 +100,16 @@ const CONTROLS_ROW_2: ControlDef[] = [
   },
 ];
 
+function parseReportDate(value: string): Date | null {
+  const date = new Date(
+    /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value,
+  );
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function formatDate(iso: string): string {
-  const date = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return iso;
+  const date = parseReportDate(iso);
+  if (!date) return iso;
   return date.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -303,7 +310,7 @@ export default function EndpointDetailPage() {
   }
 
   const { audit } = endpoint;
-  const lastAudit = new Date(`${audit.reportDate}T00:00:00`).getTime();
+  const lastAudit = parseReportDate(audit.reportDate)?.getTime() ?? Date.now();
 
   const history = [
     { date: audit.reportDate, key: audit.s3ObjectKey, current: true },
@@ -544,12 +551,10 @@ export default function EndpointDetailPage() {
       >
         <ol className="relative space-y-4 border-l border-border pl-5">
           {history.map((h, i) => {
+            const reportTime = parseReportDate(h.date)?.getTime() ?? Date.now();
             const ageDays = Math.max(
               0,
-              Math.floor(
-                (Date.now() - new Date(`${h.date}T00:00:00`).getTime()) /
-                  (24 * 60 * 60 * 1000),
-              ),
+              Math.floor((Date.now() - reportTime) / (24 * 60 * 60 * 1000)),
             );
             const ageLabel =
               ageDays === 0
@@ -558,7 +563,7 @@ export default function EndpointDetailPage() {
                   ? "1 day ago"
                   : `${ageDays} days ago`;
             return (
-              <li key={h.key} className="relative">
+              <li key={`${h.date}-${i}`} className="relative">
                 <span
                   className={`absolute -left-[1.45rem] top-1.5 size-3 rounded-full border-2 border-card ${
                     h.current ? "bg-primary" : "bg-muted"
