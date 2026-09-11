@@ -1,0 +1,432 @@
+#!/usr/bin/env python3
+"""
+Supabase Agent Helper - Direct PostgreSQL Connection
+
+Allows endpoints to send heartbeat and health monitoring data
+directly to Supabase PostgreSQL without going through Django API.
+
+Usage:
+    python3 supabase_agent.py insert_heartbeat --hostname SYSTEM-53 --mac "AA:BB:CC:DD:EE:FF" --ip 192.168.8.40
+    python3 supabase_agent.py insert_health --mac "AA:BB:CC:DD:EE:FF" --cpu 45.2 --mem 60.5 --disk 75.0
+"""
+
+import sys
+import json
+import argparse
+import os
+import time
+from datetime import datetime
+from typing import Optional, Dict, Any
+
+try:
+    import psycopg2
+    from psycopg2 import sql
+except ImportError:
+    print("ERROR: psycopg2 not installed. Install with: pip3 install psycopg2-binary", file=sys.stderr)
+    sys.exit(1)
+
+
+class SupabaseAgent:
+    """Direct PostgreSQL connection to Supabase for endpoint data."""
+
+    # Supabase connection details read from environment or /etc/default/endpoint-heartbeat
+    DB_HOST = os.environ.get("SUPABASE_HOST", "aws-0-ap-southeast-1.pooler.supabase.com")
+    DB_PORT = int(os.environ.get("SUPABASE_PORT", "6543"))
+    DB_NAME = os.environ.get("SUPABASE_DB", "postgres")
+    DB_USER = os.environ.get("SUPABASE_USER", "postgres.rzydluzduppsbjvczgfc")
+    DB_PASSWORD = os.environ.get("SUPABASE_PASSWORD", "")
+    
+    # Retry configuration
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1  # seconds, increases exponentially
+
+    def __init__(self, verbose: bool = False):
+        """Initialize Supabase connection."""
+        self.verbose = verbose
+        self.conn = None
+        self.cursor = None
+        self._connect()
+
+    def _connect(self):
+        """Establish connection to Supabase PostgreSQL with retry logic."""
+        last_error = None
+        
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            try:
+                if self.verbose:
+                    print(f"[Attempt {attempt}/{self.MAX_RETRIES}] Connecting to Supabase: {self.DB_HOST}:{self.DB_PORT}", file=sys.stderr)
+
+                self.conn = psycopg2.connect(
+                    host=self.DB_HOST,
+                    port=self.DB_PORT,
+                    database=self.DB_NAME,
+                    user=self.DB_USER,
+                    password=self.DB_PASSWORD,
+                    connect_timeout=10,
+                )
+                self.cursor = self.conn.cursor()
+
+                if self.verbose:
+                    print("✓ Connected to Supabase", file=sys.stderr)
+                
+                return  # Success
+
+            except psycopg2.OperationalError as e:
+                # Transient network errors - retry
+                last_error = e
+                if attempt < self.MAX_RETRIES:
+                    wait_time = self.RETRY_DELAY * (2 ** (attempt - 1))  # Exponential backoff
+                    if self.verbose:
+                        print(f"⚠️  Connection failed (attempt {attempt}): {e}", file=sys.stderr)
+                        print(f"   Retrying in {wait_time}s...", file=sys.stderr)
+                    time.sleep(wait_time)
+                else:
+                    print(f"ERROR: Failed to connect after {self.MAX_RETRIES} attempts: {e}", file=sys.stderr)
+                    sys.exit(1)
+            
+            except psycopg2.Error as e:
+                # Authentication or other persistent errors - fail immediately
+                print(f"ERROR: Failed to connect to Supabase: {e}", file=sys.stderr)
+                sys.exit(1)
+
+    def close(self):
+        """Close connection."""
+        if self.cursor:
+            self.cursor.close()
+        if self.conn:
+            self.conn.close()
+
+    def insert_heartbeat(
+        self,
+        hostname: str,
+        os_type: str,
+        ip_address: str,
+        mac_address: Optional[str] = None,
+        username: Optional[str] = None,
+        agent_version: str = "1.2",
+        wol_enabled: bool = False,
+    ) -> bool:
+        """Insert heartbeat into EndpointStatus table."""
+        try:
+            if self.verbose:
+                print(f"Inserting heartbeat for {hostname} ({mac_address})", file=sys.stderr)
+
+            # Normalize OS type
+            os_normalized = os_type.lower()
+            if "ubuntu" in os_normalized or "debian" in os_normalized:
+                os_normalized = "Linux"
+            elif "windows" in os_normalized:
+                os_normalized = "Windows"
+            elif "darwin" in os_normalized or "macos" in os_normalized:
+                os_normalized = "macOS"
+            else:
+                os_normalized = os_type
+
+            # Use UPDATE OR INSERT logic
+            query = sql.SQL(
+                """
+                INSERT INTO dashboard_endpointstatus 
+                (hostname, os, ip_address, mac_address, username, agent_version, wol_enabled, last_seen, updated_at, health_score, health_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 100.0, 'healthy')
+                ON CONFLICT (mac_address) DO UPDATE SET
+                    hostname = EXCLUDED.hostname,
+                    os = EXCLUDED.os,
+                    ip_address = EXCLUDED.ip_address,
+                    username = EXCLUDED.username,
+                    agent_version = EXCLUDED.agent_version,
+                    wol_enabled = EXCLUDED.wol_enabled,
+                    last_seen = NOW(),
+                    updated_at = NOW()
+                """
+            )
+
+            self.cursor.execute(query, (hostname, os_normalized, ip_address, mac_address, username, agent_version, wol_enabled))
+            self.conn.commit()
+
+            if self.verbose:
+                print(f"✓ Heartbeat inserted for {hostname}", file=sys.stderr)
+
+            return True
+
+        except psycopg2.Error as e:
+            print(f"ERROR: Failed to insert heartbeat: {e}", file=sys.stderr)
+            if self.conn:
+                self.conn.rollback()
+            return False
+
+    def insert_health(
+        self,
+        mac_address: str,
+        cpu_percent: float,
+        memory_percent: float,
+        disk_percent: float,
+        hostname: Optional[str] = None,
+        ip_address: Optional[str] = None,
+    ) -> bool:
+        """Insert health monitoring data into EndpointStatus table."""
+        try:
+            if self.verbose:
+                print(f"Inserting health data for {mac_address} (CPU: {cpu_percent}%, MEM: {memory_percent}%, DISK: {disk_percent}%)", file=sys.stderr)
+
+            # First, get the EndpointStatus to link the report
+            endpoint_query = "SELECT id, hostname, os FROM dashboard_endpointstatus WHERE mac_address = %s LIMIT 1"
+            self.cursor.execute(endpoint_query, (mac_address,))
+            endpoint_row = self.cursor.fetchone()
+
+            if not endpoint_row:
+                if self.verbose:
+                    print(f"WARNING: No EndpointStatus found for MAC {mac_address}, skipping health insert", file=sys.stderr)
+                return False
+
+            endpoint_id, endpoint_hostname, endpoint_os = endpoint_row
+            if hostname is None:
+                hostname = endpoint_hostname
+            if ip_address is None:
+                # Try to get from EndpointStatus
+                self.cursor.execute("SELECT ip_address FROM dashboard_endpointstatus WHERE id = %s", (endpoint_id,))
+                result = self.cursor.fetchone()
+                ip_address = result[0] if result else "0.0.0.0"
+
+            # Update EndpointStatus with health metrics
+            update_query = sql.SQL(
+                """
+                UPDATE dashboard_endpointstatus
+                SET cpu_percent = %s, memory_percent = %s, disk_percent = %s, last_health_check = NOW()
+                WHERE mac_address = %s
+                """
+            )
+
+            self.cursor.execute(update_query, (cpu_percent, memory_percent, disk_percent, mac_address))
+            self.conn.commit()
+
+            if self.verbose:
+                print(f"✓ Health data inserted for {hostname}", file=sys.stderr)
+
+            return True
+
+        except psycopg2.Error as e:
+            print(f"ERROR: Failed to insert health data: {e}", file=sys.stderr)
+            if self.conn:
+                self.conn.rollback()
+            return False
+
+    def activate_license(self, license_key: str, mac_address: str) -> bool:
+        """Validate a license and activate this MAC address atomically."""
+        try:
+            self.cursor.execute("BEGIN")
+            self.cursor.execute(
+                """
+                SELECT id, status, device_limit, valid_from, expires_at
+                FROM dashboard_license
+                WHERE license_key = %s
+                FOR UPDATE
+                """,
+                (license_key,),
+            )
+            license_row = self.cursor.fetchone()
+            if not license_row:
+                print("ERROR: License not found", file=sys.stderr)
+                self.conn.rollback()
+                return False
+
+            license_id, status, device_limit, valid_from, expires_at = license_row
+            now = datetime.now().astimezone()
+            if status != "active" or (valid_from and now < valid_from) or now > expires_at:
+                print(f"ERROR: License is not valid (status: {status})", file=sys.stderr)
+                self.conn.rollback()
+                return False
+
+            self.cursor.execute(
+                """
+                SELECT id FROM dashboard_licensedevicerecord
+                WHERE license_id = %s AND mac_address = %s AND deactivated_at IS NULL
+                """,
+                (license_id, mac_address),
+            )
+            if self.cursor.fetchone():
+                self.conn.commit()
+                print("License device already activated", file=sys.stderr)
+                return True
+
+            self.cursor.execute(
+                """
+                SELECT COUNT(DISTINCT mac_address)
+                FROM dashboard_licensedevicerecord
+                WHERE license_id = %s AND deactivated_at IS NULL
+                """,
+                (license_id,),
+            )
+            devices_used = self.cursor.fetchone()[0]
+            if devices_used >= device_limit:
+                print(f"ERROR: Device limit reached ({devices_used}/{device_limit})", file=sys.stderr)
+                self.conn.rollback()
+                return False
+
+            self.cursor.execute(
+                "SELECT id FROM dashboard_endpointstatus WHERE mac_address = %s LIMIT 1",
+                (mac_address,),
+            )
+            endpoint_row = self.cursor.fetchone()
+            endpoint_id = endpoint_row[0] if endpoint_row else None
+
+            self.cursor.execute(
+                """
+                INSERT INTO dashboard_licensedevicerecord
+                    (license_id, mac_address, activated_at, deactivated_at, endpoint_id, activated_by_id, notes)
+                VALUES (%s, %s, NOW(), NULL, %s, NULL, '')
+                """,
+                (license_id, mac_address, endpoint_id),
+            )
+            self.conn.commit()
+            print(f"License activated ({devices_used + 1}/{device_limit})", file=sys.stderr)
+            return True
+        except psycopg2.Error as e:
+            print(f"ERROR: License activation failed: {e}", file=sys.stderr)
+            self.conn.rollback()
+            return False
+
+    def validate_license(self, license_key: str) -> bool:
+        """Validate a license directly in Supabase and print its summary."""
+        try:
+            self.cursor.execute(
+                """
+                SELECT status, device_limit, valid_from, expires_at
+                FROM dashboard_license
+                WHERE license_key = %s
+                """,
+                (license_key,),
+            )
+            license_row = self.cursor.fetchone()
+            if not license_row:
+                print("ERROR: License not found", file=sys.stderr)
+                return False
+
+            status, device_limit, valid_from, expires_at = license_row
+            now = datetime.now().astimezone()
+            valid = status == "active" and (not valid_from or now >= valid_from) and now <= expires_at
+            if not valid:
+                print(f"ERROR: License is not valid (status: {status})", file=sys.stderr)
+                return False
+
+            self.cursor.execute(
+                """
+                SELECT COUNT(DISTINCT mac_address)
+                FROM dashboard_licensedevicerecord
+                WHERE license_id = (SELECT id FROM dashboard_license WHERE license_key = %s)
+                  AND deactivated_at IS NULL
+                """,
+                (license_key,),
+            )
+            devices_used = self.cursor.fetchone()[0]
+            print(f"License valid ({devices_used}/{device_limit} devices)", file=sys.stderr)
+            return True
+        except psycopg2.Error as e:
+            print(f"ERROR: License validation failed: {e}", file=sys.stderr)
+            return False
+
+    def get_endpoint_status(self, mac_address: str) -> Optional[Dict[str, Any]]:
+        """Retrieve endpoint status by MAC address."""
+        try:
+            query = "SELECT id, hostname, os, ip_address, username FROM dashboard_endpointstatus WHERE mac_address = %s"
+            self.cursor.execute(query, (mac_address,))
+            row = self.cursor.fetchone()
+
+            if row:
+                return {
+                    "id": row[0],
+                    "hostname": row[1],
+                    "os": row[2],
+                    "ip_address": row[3],
+                    "username": row[4],
+                }
+            return None
+
+        except psycopg2.Error as e:
+            print(f"ERROR: Failed to query endpoint status: {e}", file=sys.stderr)
+            return None
+
+
+def main():
+    """CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Supabase Agent - Send endpoint data directly to Supabase PostgreSQL"
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
+
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+
+    # Heartbeat command
+    heartbeat_parser = subparsers.add_parser("insert_heartbeat", help="Send heartbeat data")
+    heartbeat_parser.add_argument("--hostname", required=True, help="Hostname")
+    heartbeat_parser.add_argument("--os", required=True, help="OS type (linux/windows/macos)")
+    heartbeat_parser.add_argument("--ip", required=True, help="IP address")
+    heartbeat_parser.add_argument("--mac", required=False, help="MAC address")
+    heartbeat_parser.add_argument("--username", help="Username")
+    heartbeat_parser.add_argument("--version", default="1.2", help="Agent version")
+    heartbeat_parser.add_argument("--wol", action="store_true", help="WOL enabled")
+
+    # Health command
+    health_parser = subparsers.add_parser("insert_health", help="Send health monitoring data")
+    health_parser.add_argument("--mac", required=True, help="MAC address (endpoint identifier)")
+    health_parser.add_argument("--cpu", type=float, required=True, help="CPU percent")
+    health_parser.add_argument("--mem", type=float, required=True, help="Memory percent")
+    health_parser.add_argument("--disk", type=float, required=True, help="Disk percent")
+    health_parser.add_argument("--hostname", help="Hostname (optional, will use EndpointStatus)")
+    health_parser.add_argument("--ip", help="IP address (optional, will use EndpointStatus)")
+
+    license_parser = subparsers.add_parser("activate_license", help="Validate and activate a device")
+    license_parser.add_argument("--license-key", required=True, help="License key")
+    license_parser.add_argument("--mac", required=True, help="MAC address")
+
+    validate_parser = subparsers.add_parser("validate_license", help="Validate a license")
+    validate_parser.add_argument("--license-key", required=True, help="License key")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+
+    agent = SupabaseAgent(verbose=args.verbose)
+
+    try:
+        if args.command == "insert_heartbeat":
+            success = agent.insert_heartbeat(
+                hostname=args.hostname,
+                os_type=args.os,
+                ip_address=args.ip,
+                mac_address=args.mac,
+                username=args.username,
+                agent_version=args.version,
+                wol_enabled=args.wol,
+            )
+            sys.exit(0 if success else 1)
+
+        elif args.command == "insert_health":
+            success = agent.insert_health(
+                mac_address=args.mac,
+                cpu_percent=args.cpu,
+                memory_percent=args.mem,
+                disk_percent=args.disk,
+                hostname=args.hostname,
+                ip_address=args.ip,
+            )
+            sys.exit(0 if success else 1)
+
+        elif args.command == "activate_license":
+            success = agent.activate_license(
+                license_key=args.license_key,
+                mac_address=args.mac,
+            )
+            sys.exit(0 if success else 1)
+
+        elif args.command == "validate_license":
+            success = agent.validate_license(args.license_key)
+            sys.exit(0 if success else 1)
+
+    finally:
+        agent.close()
+
+
+if __name__ == "__main__":
+    main()

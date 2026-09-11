@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  Windows Task Scheduler definition for the endpoint heartbeat.
+
+  INSTALL INSTRUCTIONS
+  ────────────────────
+  1. Copy heartbeat.ps1 to C:\EndpointAgent\heartbeat.ps1
+  2. Open Task Scheduler → Action → Import Task… → select this file
+     OR run from an elevated PowerShell prompt:
+       schtasks /Create /XML "HeartbeatTask.xml" /TN "EndpointAgent\Heartbeat"
+  3. The task runs as SYSTEM so it fires even when no user is logged in.
+  4. Replace YOUR_USERNAME_HERE with the actual local admin account if you
+     prefer to run as a named user instead of SYSTEM.
+-->
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+
+  <RegistrationInfo>
+    <Description>Sends a heartbeat to the Endpoint Dashboard every minute.</Description>
+    <URI>\EndpointAgent\Heartbeat</URI>
+  </RegistrationInfo>
+
+  <Triggers>
+    <!-- Fire once at boot, then repeat every 1 minute indefinitely -->
+    <BootTrigger>
+      <Enabled>true</Enabled>
+      <Repetition>
+        <Interval>PT1M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </BootTrigger>
+  </Triggers>
+
+  <Principals>
+    <Principal id="Author">
+      <!-- Run as SYSTEM — no password needed, fires without a login session -->
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
+    <ExecutionTimeLimit>PT1M</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <WakeToRun>false</WakeToRun>
+    <Priority>7</Priority>
+  </Settings>
+
+  <Actions Context="Author">
+    <Exec>
+      <Command>powershell.exe</Command>
+      <Arguments>-NonInteractive -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\EndpointAgent\heartbeat.ps1"</Arguments>
+    </Exec>
+  </Actions>
+
+</Task>

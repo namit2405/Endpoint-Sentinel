@@ -1,0 +1,19 @@
+# =============================================================================
+# heartbeat.timer  —  systemd timer unit  (fires every 1 minute)
+# See heartbeat.service for install instructions.
+# =============================================================================
+
+[Unit]
+Description=Run Endpoint Heartbeat every minute
+Requires=heartbeat.service
+
+[Timer]
+# Wait 10 seconds after boot before the first run
+OnBootSec=10s
+# Then repeat every 1 minute
+OnUnitActiveSec=1min
+# If a run was missed (e.g. machine was suspended), fire immediately on resume
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

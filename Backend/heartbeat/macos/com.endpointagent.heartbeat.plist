@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchDaemon plist for the endpoint heartbeat (macOS).
+
+  INSTALL INSTRUCTIONS
+  ────────────────────
+  Option A — LaunchDaemon (runs as root, fires even at the login screen)
+    1. Copy heartbeat.sh to /usr/local/bin/heartbeat.sh
+       sudo cp heartbeat.sh /usr/local/bin/heartbeat.sh
+       sudo chmod +x /usr/local/bin/heartbeat.sh
+
+    2. Copy this plist to /Library/LaunchDaemons/
+       sudo cp com.endpointagent.heartbeat.plist /Library/LaunchDaemons/
+       sudo chown root:wheel /Library/LaunchDaemons/com.endpointagent.heartbeat.plist
+       sudo chmod 644 /Library/LaunchDaemons/com.endpointagent.heartbeat.plist
+
+    3. Load it:
+       sudo launchctl load /Library/LaunchDaemons/com.endpointagent.heartbeat.plist
+
+    4. Verify:
+       sudo launchctl list | grep endpointagent
+
+  Option B — LaunchAgent (runs as the logged-in user)
+    Copy to ~/Library/LaunchAgents/ instead, skip "sudo" on the launchctl load,
+    and change RunAtLoad / StartInterval as needed.
+
+  To unload:
+    sudo launchctl unload /Library/LaunchDaemons/com.endpointagent.heartbeat.plist
+-->
+<plist version="1.0">
+<dict>
+
+    <key>Label</key>
+    <string>com.endpointagent.heartbeat</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/usr/local/bin/heartbeat.sh</string>
+    </array>
+
+    <!-- Fire immediately when loaded, then every 60 seconds -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <!-- Keep stdout/stderr in a log file for troubleshooting -->
+    <key>StandardOutPath</key>
+    <string>/var/log/endpoint-heartbeat.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/endpoint-heartbeat.log</string>
+
+    <!-- Restart automatically if the script crashes -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>ThrottleInterval</key>
+    <integer>55</integer>
+
+</dict>
+</plist>

@@ -1,0 +1,33 @@
+# =============================================================================
+# heartbeat.service  —  systemd one-shot service unit
+#
+# INSTALL INSTRUCTIONS
+# ────────────────────
+# 1. Copy heartbeat.sh to /usr/local/bin/heartbeat.sh
+#    sudo cp heartbeat.sh /usr/local/bin/heartbeat.sh
+#    sudo chmod +x /usr/local/bin/heartbeat.sh
+#
+# 2. Copy both .service and .timer to /etc/systemd/system/
+#    sudo cp heartbeat.service heartbeat.timer /etc/systemd/system/
+#
+# 3. Enable and start the timer:
+#    sudo systemctl daemon-reload
+#    sudo systemctl enable --now heartbeat.timer
+#
+# 4. Check status:
+#    systemctl status heartbeat.timer
+#    journalctl -u heartbeat.service -n 20
+# =============================================================================
+
+[Unit]
+Description=Endpoint Heartbeat — send presence to dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/heartbeat.sh
+StandardOutput=journal
+StandardError=journal
+# Treat exit 1 (HTTP error) as a soft failure — timer keeps firing
+SuccessExitStatus=0 1

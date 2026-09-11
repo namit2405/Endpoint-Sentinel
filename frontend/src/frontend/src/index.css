@@ -1,0 +1,175 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/assets/fonts/SpaceGrotesk.woff2") format("woff2");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "General Sans";
+  src: url("/assets/fonts/GeneralSans.woff2") format("woff2");
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/JetBrainsMono.woff2") format("woff2");
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --font-display: "Space Grotesk";
+    --font-body: "General Sans";
+    --font-mono: "JetBrains Mono";
+    --radius: 0.625rem;
+
+    --background: 0.96 0.004 260;
+    --foreground: 0.2 0.02 260;
+    --card: 1.0 0 0;
+    --card-foreground: 0.2 0.02 260;
+    --popover: 1.0 0 0;
+    --popover-foreground: 0.2 0.02 260;
+
+    --primary: 0.35 0.15 255;
+    --primary-foreground: 0.98 0.005 255;
+
+    --secondary: 0.94 0.01 260;
+    --secondary-foreground: 0.28 0.02 260;
+    --muted: 0.94 0.01 260;
+    --muted-foreground: 0.5 0.015 260;
+
+    --accent: 0.45 0.13 255;
+    --accent-foreground: 0.98 0.005 255;
+
+    --destructive: 0.55 0.22 25;
+    --destructive-foreground: 0.98 0.005 25;
+    --success: 0.6 0.16 150;
+    --warning: 0.72 0.15 85;
+
+    --border: 0.9 0.008 260;
+    --input: 0.9 0.008 260;
+    --ring: 0.35 0.15 255;
+
+    --chart-1: 0.45 0.13 255;
+    --chart-2: 0.6 0.16 150;
+    --chart-3: 0.72 0.15 85;
+    --chart-4: 0.55 0.22 25;
+    --chart-5: 0.5 0.1 300;
+
+    --sidebar: 0.22 0.03 260;
+    --sidebar-foreground: 0.9 0.01 260;
+    --sidebar-primary: 0.6 0.15 255;
+    --sidebar-primary-foreground: 0.15 0.02 260;
+    --sidebar-accent: 0.3 0.03 260;
+    --sidebar-accent-foreground: 0.95 0.01 260;
+    --sidebar-border: 0.28 0.03 260;
+    --sidebar-ring: 0.6 0.15 255;
+
+    --signin-panel: 0.16 0.03 260;
+    --signin-panel-foreground: 0.93 0.01 260;
+    --signin-accent: 0.62 0.15 255;
+    --signin-accent-foreground: 0.14 0.02 260;
+  }
+
+  .dark {
+    --background: 0.16 0.02 260;
+    --foreground: 0.93 0.01 260;
+    --card: 0.2 0.025 260;
+    --card-foreground: 0.93 0.01 260;
+    --popover: 0.2 0.025 260;
+    --popover-foreground: 0.93 0.01 260;
+
+    --primary: 0.62 0.15 255;
+    --primary-foreground: 0.15 0.02 260;
+
+    --secondary: 0.25 0.03 260;
+    --secondary-foreground: 0.85 0.01 260;
+    --muted: 0.25 0.03 260;
+    --muted-foreground: 0.6 0.01 260;
+
+    --accent: 0.55 0.13 255;
+    --accent-foreground: 0.15 0.02 260;
+
+    --destructive: 0.65 0.19 25;
+    --destructive-foreground: 0.15 0.02 25;
+    --success: 0.65 0.16 150;
+    --warning: 0.75 0.14 85;
+
+    --border: 0.3 0.03 260;
+    --input: 0.3 0.03 260;
+    --ring: 0.62 0.15 255;
+
+    --chart-1: 0.62 0.15 255;
+    --chart-2: 0.65 0.16 150;
+    --chart-3: 0.75 0.14 85;
+    --chart-4: 0.65 0.19 25;
+    --chart-5: 0.6 0.12 300;
+
+    --sidebar: 0.14 0.02 260;
+    --sidebar-foreground: 0.93 0.01 260;
+    --sidebar-primary: 0.62 0.15 255;
+    --sidebar-primary-foreground: 0.15 0.02 260;
+    --sidebar-accent: 0.24 0.03 260;
+    --sidebar-accent-foreground: 0.93 0.01 260;
+    --sidebar-border: 0.24 0.03 260;
+    --sidebar-ring: 0.62 0.15 255;
+
+    --signin-panel: 0.12 0.025 260;
+    --signin-panel-foreground: 0.93 0.01 260;
+    --signin-accent: 0.62 0.15 255;
+    --signin-accent-foreground: 0.12 0.02 260;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+}
+
+@layer utilities {
+  .transition-smooth {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .gradient-primary {
+    background-image: linear-gradient(
+      135deg,
+      oklch(var(--primary)),
+      oklch(var(--accent))
+    );
+  }
+
+  .gradient-subtle {
+    background-image: linear-gradient(
+      180deg,
+      oklch(var(--card)),
+      oklch(var(--muted) / 0.6)
+    );
+  }
+
+  .gradient-signin {
+    background-image: linear-gradient(
+      160deg,
+      oklch(var(--signin-panel)),
+      oklch(0.09 0.03 260)
+    );
+  }
+
+  .gradient-signin-accent {
+    background-image: linear-gradient(
+      135deg,
+      oklch(var(--signin-accent)),
+      oklch(0.72 0.13 255)
+    );
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
