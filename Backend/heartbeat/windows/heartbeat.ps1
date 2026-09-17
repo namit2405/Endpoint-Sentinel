@@ -54,7 +54,7 @@ try {
     if ($NIC) {
         # Try to get WoL setting from NIC
         $WolSettings = Get-NetAdapterAdvancedProperty -Name $NIC.Name -RegistryKeyword "WakeOnMagicPacket" -ErrorAction SilentlyContinue
-        if ($WolSettings -and $WolSettings.RegistryValue -eq '1') {
+        if ($WolSettings -and "$($WolSettings.RegistryValue)" -match 'Enabled|True|1') {
             $WolEnabled = $true
         }
     }

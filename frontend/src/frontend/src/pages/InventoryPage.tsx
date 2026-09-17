@@ -22,16 +22,18 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { apiClient } from "@/lib/api-client";
 import {
   formatPercent,
   riskScoreBg,
   riskScoreColor,
   timeAgo,
 } from "@/lib/format";
-import { apiClient } from "@/lib/api-client";
 import type { EndpointStatus, OS, RiskLevel } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
 import { Link } from "@tanstack/react-router";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   ChevronDown,
   ChevronUp,
@@ -125,12 +127,22 @@ function toCsv(endpoints: EndpointStatus[]): string {
     "OS",
     "IP",
     "MAC",
-    "CPU Cores",
-    "CPU Model",
-    "RAM (GB)",
-    "Updates Pending",
+    "Health Score",
+    "Health Status",
     "Risk Score",
     "Risk Level",
+    "CPU Model",
+    "CPU Cores",
+    "RAM (GB)",
+    "CPU %",
+    "Memory %",
+    "Disk % Used",
+    "Updates Pending",
+    "Firewall",
+    "Antivirus",
+    "Secure Boot",
+    "TPM",
+    "Wake-on-LAN",
     "Last Audit",
   ];
   const rows = endpoints.map((e) => [
@@ -138,16 +150,189 @@ function toCsv(endpoints: EndpointStatus[]): string {
     e.os,
     e.ip_address,
     e.mac_address,
-    String(e.audit.hardware.cpuCores),
-    e.audit.hardware.cpuModel,
-    String(e.audit.hardware.ramGb),
-    String(e.audit.pendingUpdates),
+    String(e.health_score),
+    e.health_status,
     String(e.audit.riskScore),
     riskLabel(e.audit.riskLevel),
-    e.audit.reportDate,
+    e.audit.hardware.cpuModel,
+    String(e.audit.hardware.cpuCores),
+    String(e.audit.hardware.ramGb),
+    String(e.cpu_percent),
+    String(e.memory_percent),
+    String(e.audit.hardware.diskPercent),
+    String(e.audit.pendingUpdates),
+    e.firewall_active ? "Active" : "Disabled",
+    e.antivirus_active ? "Active" : "Disabled",
+    e.audit.security.secureBoot ? "Enabled" : "Disabled",
+    e.audit.security.tpm ? "Present" : "Not detected",
+    e.wol_enabled === null ? "Unknown" : e.wol_enabled ? "Enabled" : "Disabled",
+    formatReportDate(e.audit.reportDate),
   ]);
   const csvEscape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   return [header, ...rows].map((r) => r.map(csvEscape).join(",")).join("\n");
+}
+
+function formatReportDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "Unavailable"
+    : date.toLocaleDateString();
+}
+
+function exportPdf(endpoints: EndpointStatus[]): void {
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const generated = new Date().toLocaleString();
+
+  doc.setFillColor(22, 31, 42);
+  doc.rect(0, 0, 297, 31, "F");
+  doc.setFillColor(41, 190, 184);
+  doc.rect(0, 28, 297, 3, "F");
+  doc.setTextColor(108, 232, 221);
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("ENDPOINT SENTINEL", 14, 12);
+  doc.setTextColor(225, 232, 238);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.text("Fleet Inventory & Health Report", 14, 20);
+  doc.setTextColor(190, 205, 215);
+  doc.text(`Generated ${generated}`, 207, 16);
+
+  doc.setTextColor(31, 42, 55);
+  doc.setFontSize(15);
+  doc.setFont("helvetica", "bold");
+  doc.text("Dashboard Snapshot", 14, 43);
+  autoTable(doc, {
+    startY: 48,
+    theme: "plain",
+    head: [
+      [
+        "Endpoints",
+        "Avg Health",
+        "Healthy",
+        "Warning",
+        "Critical",
+        "High Risk",
+        "WoL Enabled",
+      ],
+    ],
+    body: [
+      [
+        endpoints.length,
+        `${Math.round(endpoints.reduce((sum, endpoint) => sum + endpoint.health_score, 0) / Math.max(endpoints.length, 1))}%`,
+        endpoints.filter((e) => e.health_status === "healthy").length,
+        endpoints.filter((e) => e.health_status === "warning").length,
+        endpoints.filter((e) => e.health_status === "critical").length,
+        endpoints.filter((e) => e.audit.riskLevel === "high").length,
+        endpoints.filter((e) => e.wol_enabled === true).length,
+      ],
+    ],
+    headStyles: {
+      fillColor: [231, 246, 244],
+      textColor: [48, 91, 91],
+      fontStyle: "normal",
+    },
+    bodyStyles: { fontSize: 14, fontStyle: "bold", textColor: [22, 31, 42] },
+    margin: { left: 14, right: 14 },
+  });
+
+  doc.setFontSize(13);
+  doc.text("Attention Queue", 14, 85);
+  autoTable(doc, {
+    startY: 89,
+    head: [["Dashboard signal", "Count", "Affected endpoints"]],
+    body: [
+      [
+        "Firewall disabled",
+        endpoints.filter((e) => !e.firewall_active).length,
+        endpoints
+          .filter((e) => !e.firewall_active)
+          .map((e) => e.hostname)
+          .join(", ") || "-",
+      ],
+      [
+        "Antivirus disabled",
+        endpoints.filter((e) => !e.antivirus_active).length,
+        endpoints
+          .filter((e) => !e.antivirus_active)
+          .map((e) => e.hostname)
+          .join(", ") || "-",
+      ],
+      [
+        "Pending updates",
+        endpoints.filter((e) => e.audit.pendingUpdates > 0).length,
+        endpoints
+          .filter((e) => e.audit.pendingUpdates > 0)
+          .map((e) => e.hostname)
+          .join(", ") || "-",
+      ],
+      [
+        "Critical health",
+        endpoints.filter((e) => e.health_status === "critical").length,
+        endpoints
+          .filter((e) => e.health_status === "critical")
+          .map((e) => e.hostname)
+          .join(", ") || "-",
+      ],
+    ],
+    styles: { fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [38, 92, 99] },
+    columnStyles: {
+      0: { cellWidth: 62 },
+      1: { cellWidth: 18 },
+      2: { cellWidth: 190 },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  const detailStart =
+    (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable
+      ?.finalY ?? 115;
+  doc.setFontSize(13);
+  doc.text("Endpoint Register", 14, detailStart + 12);
+  autoTable(doc, {
+    startY: detailStart + 16,
+    head: [
+      [
+        "Hostname",
+        "OS",
+        "IP",
+        "MAC",
+        "Health",
+        "Status",
+        "Risk",
+        "CPU %",
+        "Mem %",
+        "Disk %",
+        "FW",
+        "AV",
+        "WoL",
+        "Updates",
+      ],
+    ],
+    body: endpoints.map((e) => [
+      e.hostname,
+      e.os,
+      e.ip_address,
+      e.mac_address,
+      `${e.health_score}%`,
+      e.health_status,
+      `${e.audit.riskScore} / ${riskLabel(e.audit.riskLevel)}`,
+      `${e.cpu_percent}%`,
+      `${e.memory_percent}%`,
+      `${e.audit.hardware.diskPercent}%`,
+      e.firewall_active ? "On" : "Off",
+      e.antivirus_active ? "On" : "Off",
+      e.wol_enabled === null ? "?" : e.wol_enabled ? "On" : "Off",
+      String(e.audit.pendingUpdates),
+    ]),
+    styles: { fontSize: 6.5, cellPadding: 1.8, overflow: "linebreak" },
+    headStyles: { fillColor: [38, 92, 99] },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { left: 14, right: 14 },
+  });
+
+  doc.save("endpoint-sentinel-fleet-report.pdf");
 }
 
 export default function InventoryPage() {
@@ -226,6 +411,8 @@ export default function InventoryPage() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+
+  const handleExportPdf = () => exportPdf(filtered);
 
   const handleFetchLatest = async () => {
     setFetchingLatest(true);
@@ -310,6 +497,15 @@ export default function InventoryPage() {
               className={`size-4 ${fetchingLatest ? "animate-spin" : ""}`}
             />
             {fetchingLatest ? "Fetching..." : "Fetch latest"}
+          </Button>
+          <Button
+            data-ocid="inventory.export_pdf_button"
+            variant="outline"
+            onClick={handleExportPdf}
+            disabled={filtered.length === 0}
+          >
+            <Download className="size-4" />
+            Export PDF
           </Button>
           <Button
             data-ocid="inventory.export_button"

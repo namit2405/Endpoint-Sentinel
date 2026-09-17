@@ -495,6 +495,39 @@ $BROWSER_DATA = SafeRun {
 } "No Chrome extension directories found"
 
 # ============================================================
+# INSTALLED SOFTWARE
+# ============================================================
+
+$SOFTWARE_LIST = SafeRun {
+    $packages = Get-Package -ErrorAction Stop |
+        Select-Object -First 100 Name, Version, ProviderName
+    if ($packages) {
+        ($packages | Format-Table -AutoSize | Out-String).Trim()
+    } else {
+        "No installed packages found"
+    }
+} "Unable to enumerate installed software (Get-Package unavailable)"
+
+# ============================================================
+# WAKE-ON-LAN
+# ============================================================
+
+$WOL_STATUS = SafeRun {
+    $adapters = Get-NetAdapter -Physical -ErrorAction Stop |
+        Where-Object { $_.Status -eq "Up" }
+    $lines = foreach ($adapter in $adapters) {
+        try {
+            $power = Get-NetAdapterPowerManagement -Name $adapter.Name -ErrorAction Stop
+            $magicPacket = if ($power.WakeOnMagicPacket) { "$($power.WakeOnMagicPacket)" } else { "Unknown" }
+            "$($adapter.Name) [$($adapter.MacAddress)] - WakeOnMagicPacket: $magicPacket"
+        } catch {
+            "$($adapter.Name) [$($adapter.MacAddress)] - WakeOnMagicPacket: Unable to determine"
+        }
+    }
+    if ($lines) { $lines -join "`n" } else { "No active physical adapters found" }
+} "Unable to determine Wake-on-LAN status"
+
+# ============================================================
 # WORLD-WRITABLE FILES/DIRS - Windows equivalent: paths granting
 # "Everyone" or "Authenticated Users" Modify/FullControl outside
 # user profiles (best-effort, common risky roots only)
@@ -588,6 +621,8 @@ $H = @{
     Usb = HtmlEscape $USB_DEVICES
     UsbStorage = HtmlEscape $USB_STORAGE
     Browser = HtmlEscape $BROWSER_DATA
+    Software = HtmlEscape $SOFTWARE_LIST
+    Wol = HtmlEscape $WOL_STATUS
     Everyone = HtmlEscape $EVERYONE_WRITABLE
     UnquotedSvc = HtmlEscape $UNQUOTED_SERVICE_PATHS
     LogRetention = HtmlEscape $LOG_RETENTION
@@ -726,8 +761,14 @@ $($H.Smb1)
 <h2>USB Storage Policy</h2>
 <pre>$($H.UsbStorage)</pre>
 
+<h2>Wake-on-LAN</h2>
+<pre>$($H.Wol)</pre>
+
 <h2>Browser Extensions (all users, Chrome)</h2>
 <pre>$($H.Browser)</pre>
+
+<h2>Installed Software (first 100)</h2>
+<pre>$($H.Software)</pre>
 
 <h2>Everyone-Writable Paths (common risky roots, first 20)</h2>
 <pre>$($H.Everyone)</pre>
@@ -763,6 +804,8 @@ Write-Host ""
 $RUNNING_SERVICES | Out-File -FilePath (Join-Path $CsvDir "running_services.txt") -Encoding UTF8
 $OPEN_PORTS | Out-File -FilePath (Join-Path $CsvDir "open_ports.txt") -Encoding UTF8
 $SCHEDULED_TASKS | Out-File -FilePath (Join-Path $CsvDir "scheduled_tasks.txt") -Encoding UTF8
+$SOFTWARE_LIST | Out-File -FilePath (Join-Path $CsvDir "installed_software.txt") -Encoding UTF8
+$WOL_STATUS | Out-File -FilePath (Join-Path $CsvDir "wake_on_lan.txt") -Encoding UTF8
 $LOCAL_USERS_TABLE -replace '\|', ',' | Out-File -FilePath (Join-Path $CsvDir "local_users.csv") -Encoding UTF8
 
 Write-Host "CSV Exports Saved At:"
@@ -800,11 +843,21 @@ if (-not $B2ApplicationKeyId -or -not $B2ApplicationKey) {
     # configured absolute Python runtime for a reliable module invocation.
     $PythonPath = $env:PYTHON_PATH
     if (-not $PythonPath) { $PythonPath = "python" }
-    $B2Cmd = "C:\Program Files\Python312\Scripts\b2.exe"
+    $B2Cmd = $env:B2_PATH
+    if (-not $B2Cmd) {
+        $B2Cmd = Join-Path (Split-Path $env:PYTHON_PATH -Parent) "b2.exe"
+    }
 
-    Write-Host "  Authorizing B2 account..."
-    & $B2Cmd account authorize $B2ApplicationKeyId $B2ApplicationKey 2>&1
-    if ($LASTEXITCODE -eq 0) {
+    if (-not (Test-Path $B2Cmd)) {
+        Write-Host "  x B2 CLI not found: $B2Cmd"
+        $B2Cmd = $null
+    }
+
+    if ($B2Cmd) {
+        Write-Host "  Authorizing B2 account..."
+        & $B2Cmd account authorize $B2ApplicationKeyId $B2ApplicationKey 2>&1
+    }
+    if ($B2Cmd -and $LASTEXITCODE -eq 0) {
         $RemoteName = "Windows/$HostnameVal/$(Split-Path $ReportFile -Leaf)"
         Write-Host "  Uploading: $ReportFile"
         & $B2Cmd file upload $B2Bucket $ReportFile $RemoteName 2>&1

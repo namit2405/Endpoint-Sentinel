@@ -44,11 +44,14 @@ $HealthAgentScript = Join-Path $AgentDir "health-monitor-agent.ps1"
 $AuditScript = Join-Path $AgentDir "windows_audit.ps1"
 $AuditRunnerScript = Join-Path $AgentDir "run-audit.ps1"
 $SupabaseHelper = Join-Path $AgentDir "supabase_agent.py"
+$VenvDir = Join-Path $AgentDir "venv"
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+$B2Path = Join-Path $VenvDir "Scripts\b2.exe"
 
 $ConfigDir = "C:\ProgramData\EndpointAgent"
 $ConfigFile = Join-Path $ConfigDir "endpoint-heartbeat.env"
 
-$AgentVersion = "1.2"
+$AgentVersion = "1.3"
 
 # -----------------------------------------------------------------------
 # AUDIT REPORT DIRECTORY
@@ -177,6 +180,13 @@ if (-not (Test-Path $SourceSupabaseHelper)) {
     Write-Host "  supabase_agent.py"
     Write-Host ""
     exit 1
+}
+
+foreach ($RequiredMarker in @('subparsers.add_parser("validate_license"', 'subparsers.add_parser("activate_license"', 'subparsers.add_parser("poll_commands"')) {
+    if (-not (Select-String -Path $SourceSupabaseHelper -Pattern $RequiredMarker -SimpleMatch -Quiet)) {
+        Write-Host "ERROR: supabase_agent.py is outdated. Missing command: $RequiredMarker"
+        exit 1
+    }
 }
 
 # =============================================================================
@@ -347,29 +357,37 @@ function Install-Agent {
     # INSTALL PYTHON DEPENDENCIES
     # =========================================================================
 
-    Write-Host ""
-    Write-Host "Installing Python dependencies..."
+    # Keep endpoint dependencies isolated from the user's/system Python.
+    Write-Host "Creating isolated Python environment..."
+    if (-not (Test-Path $VenvPython)) {
+        $ErrorActionPreference = "Continue"
+        & $PythonPath -m venv $VenvDir
+        $VenvExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $PreviousErrorActionPreference
+        if ($VenvExitCode -ne 0 -or -not (Test-Path $VenvPython)) {
+            Write-Host "ERROR: Failed to create the agent Python virtual environment."
+            exit 1
+        }
+    }
+    $PythonPath = $VenvPython
 
     $ErrorActionPreference = "Continue"
-    & $PythonPath -m pip install psycopg2-binary
-    $Psycopg2ExitCode = $LASTEXITCODE
+    & $PythonPath -m pip install --upgrade pip setuptools wheel psycopg2-binary b2
+    $DependencyExitCode = $LASTEXITCODE
     $ErrorActionPreference = $PreviousErrorActionPreference
-    if ($Psycopg2ExitCode -ne 0) {
-        Write-Host "ERROR: Failed to install psycopg2-binary"
+    if ($DependencyExitCode -ne 0) {
+        Write-Host "ERROR: Failed to install agent Python dependencies into $VenvDir"
         exit 1
     }
 
     $ErrorActionPreference = "Continue"
-    & $PythonPath -c "import psycopg2; print('psycopg2 import: OK')"
-    $Psycopg2ImportExitCode = $LASTEXITCODE
+    & $PythonPath -c "import psycopg2, b2sdk; print('Agent Python dependencies: OK')"
+    $DependencyCheckExitCode = $LASTEXITCODE
     $ErrorActionPreference = $PreviousErrorActionPreference
-    if ($Psycopg2ImportExitCode -ne 0) {
-        Write-Host "ERROR: psycopg2-binary is installed but cannot be imported by this Python runtime."
-        Write-Host "Python 3.14 is not supported reliably by all psycopg2-binary builds. Install Python 3.12 or 3.13, then run this installer again."
+    if ($DependencyCheckExitCode -ne 0 -or -not (Test-Path $B2Path)) {
+        Write-Host "ERROR: Agent Python dependencies could not be verified."
         exit 1
     }
-
-    Write-Host "* psycopg2-binary installed"
 
     # The helper reads connection details from process environment variables.
     # Load the embedded values before direct license validation.
@@ -391,30 +409,15 @@ function Install-Agent {
     Write-Host "Installing B2 CLI for audit report uploads..."
 
     $ErrorActionPreference = "Continue"
-    & $PythonPath -m pip install b2
-    $B2InstallExitCode = $LASTEXITCODE
+    & $B2Path version
+    $B2VersionExitCode = $LASTEXITCODE
     $ErrorActionPreference = $PreviousErrorActionPreference
-
-    $B2Available = $false
-    $B2Path = Join-Path (Split-Path $PythonPath -Parent) "Scripts\b2.exe"
-
-    if (Test-Path $B2Path) {
-        $ErrorActionPreference = "Continue"
-        & $B2Path version
-        $B2VersionExitCode = $LASTEXITCODE
-        $ErrorActionPreference = $PreviousErrorActionPreference
-
-        if ($B2VersionExitCode -eq 0) {
-            $B2Available = $true
-        }
+    if ($B2VersionExitCode -ne 0) {
+        Write-Host "ERROR: B2 CLI could not be started from $B2Path"
+        exit 1
     }
-
-    if ($B2Available) {
-        Write-Host "* B2 CLI installed"
-        Write-Host "  $B2Path"
-    } else {
-        Write-Host "! B2 CLI not installed - audit uploads will fail"
-    }
+    Write-Host "* B2 CLI installed"
+    Write-Host "  $B2Path"
 
     # =========================================================================
     # CREATE CONFIGURATION
@@ -433,6 +436,7 @@ REPORT_DIR=$ReportDir
 HEALTH_INTERVAL=$HealthInterval
 AUDIT_HOUR=$AuditHour
 PYTHON_PATH=$PythonPath
+B2_PATH=$B2Path
 
 # License Configuration
 LICENSE_KEY=$LicenseKey
@@ -559,7 +563,7 @@ if (Test-Path $ConfigFile) {
 # Configuration
 # =============================================================================
 
-$AgentVersion = "1.2"
+$AgentVersion = "1.3"
 $AgentDir = "C:\Program Files\EndpointAgent"
 $SupabaseHelper = Join-Path $AgentDir "supabase_agent.py"
 $PythonPath = '__PYTHON_PATH__'
@@ -587,7 +591,8 @@ $WolEnabled = $false
 if ($Adapter) {
     try {
         $WolCap = Get-NetAdapterPowerManagement -Name $Adapter.Name -ErrorAction Stop
-        $WolEnabled = [bool]$WolCap.WakeOnMagicPacket -eq "Enabled"
+        $WolState = "$($WolCap.WakeOnMagicPacket)"
+        $WolEnabled = $WolState -match "Enabled|True|1"
     } catch { }
 }
 
