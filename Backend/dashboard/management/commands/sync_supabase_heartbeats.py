@@ -78,6 +78,9 @@ class Command(BaseCommand):
                     },
                 )
                 # Update or create EndpointStatus in Django
+                previous_last_seen = EndpointStatus.objects.filter(
+                    hostname=hostname
+                ).values_list('last_seen', flat=True).first()
                 endpoint, created = EndpointStatus.objects.update_or_create(
                     hostname=hostname,
                     defaults={
@@ -88,6 +91,11 @@ class Command(BaseCommand):
                         'endpoint_device': endpoint_device,
                     }
                 )
+                if created or not endpoint.connection_started_at or (
+                    previous_last_seen and timestamp - previous_last_seen > timedelta(minutes=2)
+                ):
+                    endpoint.connection_started_at = timestamp
+                    endpoint.save(update_fields=['connection_started_at'])
                 if created:
                     self.stdout.write(
                         self.style.SUCCESS(f'  ✓ Created: {hostname}')

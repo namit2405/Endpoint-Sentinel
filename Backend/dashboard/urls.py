@@ -45,7 +45,9 @@ urlpatterns = [
     # ── Dashboard REST API (for React frontend) ───────────────────────────
     path("api/dashboard/overview/",            api_views.overview,        name="api_overview"),
     path("api/dashboard/inventory/",           api_views.inventory,       name="api_inventory"),
+    path("api/dashboard/fetch-latest/",        api_views.fetch_latest_reports, name="api_fetch_latest_reports"),
     path("api/dashboard/machine/<int:pk>/",    api_views.machine_detail,  name="api_machine_detail"),
+    path("api/dashboard/machine/<int:pk>/download/", api_views.download_report, name="api_download_report"),
     path("api/dashboard/compare/",             api_views.compare,         name="api_compare"),
     path("api/dashboard/search/",              api_views.search,          name="api_search"),
 

@@ -772,7 +772,7 @@ get_mac() {
 
 collect_and_send_health() {
     local hostname_value mac_value ip_value
-    local cpu_percent memory_percent disk_percent
+    local cpu_percent memory_percent disk_percent uptime_seconds
 
     # Identity
     hostname_value="$(get_hostname)"
@@ -797,19 +797,24 @@ collect_and_send_health() {
     disk_percent="$(df / 2>/dev/null | tail -1 | awk '{printf "%.1f", $5}')"
     [ -z "$disk_percent" ] && disk_percent="0.0"
 
+    # UPTIME
+    uptime_seconds="$(awk '{printf "%d", $1}' /proc/uptime 2>/dev/null)"
+    [ -z "$uptime_seconds" ] && uptime_seconds="0"
+
     # Send to Supabase
     if [ ! -f "$SUPABASE_HELPER" ]; then
         log_msg "✗ Supabase helper not found: $SUPABASE_HELPER"
         return 1
     fi
 
-    log_msg "Sending health to Supabase (CPU: ${cpu_percent}%, MEM: ${memory_percent}%, DISK: ${disk_percent}%)"
+    log_msg "Sending health to Supabase (CPU: ${cpu_percent}%, MEM: ${memory_percent}%, DISK: ${disk_percent}%, UPTIME: ${uptime_seconds}s)"
 
     if "$PYTHON_BIN" "$SUPABASE_HELPER" insert_health \
         --mac "$mac_value" \
         --cpu "$cpu_percent" \
         --mem "$memory_percent" \
         --disk "$disk_percent" \
+        --uptime "$uptime_seconds" \
         --hostname "$hostname_value" \
         --ip "$ip_value" 2>/dev/null; then
         log_msg "✓ Health data sent"

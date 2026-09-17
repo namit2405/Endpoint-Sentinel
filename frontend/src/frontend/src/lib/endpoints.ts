@@ -22,13 +22,14 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
       cpu_percent: ep.cpu_percent ?? 0,
       memory_percent: ep.memory_percent ?? 0,
       disk_percent: ep.disk_percent ?? 0,
+      uptime_seconds: ep.uptime_seconds ?? null,
       health_score: ep.health_score ?? 100,
       health_status: (ep.health_status ?? "healthy") as "healthy" | "warning" | "critical",
       firewall_active: ep.firewall_active ?? false,
       antivirus_active: ep.antivirus_active ?? false,
       last_seen: new Date(ep.last_seen).getTime(),
       last_health_check: ep.last_health_check ? new Date(ep.last_health_check).getTime() : Date.now(),
-      connection_uptime: 0, // Backend doesn't provide this currently
+      connection_uptime: ep.connection_uptime ?? 0,
       audit: {
         hardware: {
           cpuCores: parseCpuCores(ep.audit?.cpu),
@@ -47,14 +48,35 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
           auditd: ep.audit?.auditd_enabled ?? false,
           passwordlessSudo: ep.audit?.passwordless_sudo ?? false,
         },
-        pendingUpdates: 0,
-        lastPatchDate: new Date().toISOString().slice(0, 10),
+        pendingUpdates: ep.audit?.pending_updates ?? 0,
+        lastPatchDate: ep.audit?.last_patch_date ?? new Date().toISOString().slice(0, 10),
         passMaxDays: 90,
         riskScore: ep.audit?.risk_score ?? Math.round((100 - ep.health_score) * 0.8),
         riskLevel: ep.audit?.risk_level === "critical" ? "high" : ep.audit?.risk_level === "warning" ? "medium" : ep.audit?.risk_level === "high" ? "high" : ep.health_status === "critical" ? "high" : ep.health_status === "warning" ? "medium" : "low",
-        riskFindings: [],
+        riskFindings: (ep.audit?.findings ?? []).map((finding: any) => ({
+          id: finding.key,
+          title: finding.title,
+          severity: finding.severity,
+          impact: finding.impact,
+          description: finding.description,
+        })),
         reportDate: ep.audit?.report_date ?? new Date().toISOString().slice(0, 10),
+        reportId: ep.audit?.report_id ?? null,
         s3ObjectKey: "",
+        history: (ep.audit?.history?.length
+          ? ep.audit.history
+          : ep.audit?.report_id
+            ? [{
+                report_id: ep.audit.report_id,
+                report_date: ep.audit.report_date,
+                s3_object_key: ep.audit.s3_object_key,
+              }]
+            : []
+        ).map((report: any) => ({
+          reportId: report.report_id,
+          reportDate: report.report_date,
+          s3ObjectKey: report.s3_object_key ?? "",
+        })),
       },
     }));
   } catch (error) {

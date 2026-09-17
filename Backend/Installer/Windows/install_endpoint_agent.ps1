@@ -1,4 +1,4 @@
-<#
+﻿<#
 =============================================================================
  Endpoint Dashboard - Windows Endpoint Agent Installer
 
@@ -42,6 +42,7 @@ $AgentDir = "C:\Program Files\EndpointAgent"
 $AgentScript = Join-Path $AgentDir "heartbeat-agent.ps1"
 $HealthAgentScript = Join-Path $AgentDir "health-monitor-agent.ps1"
 $AuditScript = Join-Path $AgentDir "windows_audit.ps1"
+$AuditRunnerScript = Join-Path $AgentDir "run-audit.ps1"
 $SupabaseHelper = Join-Path $AgentDir "supabase_agent.py"
 
 $ConfigDir = "C:\ProgramData\EndpointAgent"
@@ -53,7 +54,8 @@ $AgentVersion = "1.2"
 # AUDIT REPORT DIRECTORY
 # -----------------------------------------------------------------------
 
-$ReportDir = "$env:TEMP\AuditReports\Reports\Windows"
+$ReportDir = "$env:ProgramData\EndpointAgent\Reports\Windows"
+$LogDir = "$env:ProgramData\EndpointAgent\Logs"
 
 # -----------------------------------------------------------------------
 # HEALTH MONITORING INTERVAL (seconds)
@@ -88,14 +90,23 @@ if (-not $CurrentPrincipal.IsInRole([Security.Principal.WindowsBuiltinRole]::Adm
 
 
 # =============================================================================
-# LICENSE KEY PROMPT
-# =============================================================================
+# EMBEDDED DEPLOYMENT CREDENTIALS
+# ==========================================================================python -c "import psycopg2; print('psycopg2 import: OK')"
 
-$BackendUrl = "http://localhost:8001"
+$BackendUrl = ""
 $LicenseKey = ""
 $CompanyName = ""
 $DevicesUsed = ""
 $DeviceLimit = ""
+
+$SupabaseHost = "aws-0-ap-southeast-1.pooler.supabase.com"
+$SupabasePort = "6543"
+$SupabaseDb = "postgres"
+$SupabaseUser = "postgres.rzydluzduppsbjvczgfc"
+$SupabasePassword = "Nm@2405#kis"
+$B2ApplicationKeyId = "005b92fde5a0e0c0000000001"
+$B2ApplicationKey = "K0057HU2vqAx/t2RQwJIFevGes8JYjg"
+$B2Bucket = "Endpoint-Dashboard"
 
 function Prompt-For-LicenseKey {
     Write-Host ""
@@ -114,32 +125,19 @@ function Prompt-For-LicenseKey {
             continue
         }
         
-        # Validate with backend
-        Write-Host "Validating license key..."
+        # Validate directly against Supabase, matching the Linux installer.
+        Write-Host "Validating license key in Supabase..."
         
         try {
-            $Body = @{ license_key = $LicenseKey } | ConvertTo-Json
-            $ValidationResponse = Invoke-WebRequest -Uri "$BackendUrl/api/licenses/validate/" `
-                -Method POST `
-                -Headers @{"Content-Type"="application/json"} `
-                -Body $Body `
-                -ErrorAction Stop `
-                -TimeoutSec 10 | Select-Object -ExpandProperty Content | ConvertFrom-Json
-            
-            if ($ValidationResponse.valid -eq $true) {
-                $script:CompanyName = $ValidationResponse.company_name
-                $script:DevicesUsed = $ValidationResponse.devices_used
-                $script:DeviceLimit = $ValidationResponse.device_limit
+            & $PythonPath $SourceSupabaseHelper validate_license --license-key $LicenseKey
+            if ($LASTEXITCODE -eq 0) {
                 $script:LicenseKey = $LicenseKey
                 
                 Write-Host "* License key validated successfully"
-                Write-Host "  Company: $($script:CompanyName)"
-                Write-Host "  Devices Active: $($script:DevicesUsed) / $($script:DeviceLimit)"
                 Write-Host ""
                 return
             } else {
-                $ErrorMsg = if ($ValidationResponse.error) { $ValidationResponse.error } else { "Unknown error" }
-                Write-Host "x License validation failed: $ErrorMsg"
+                Write-Host "x License validation failed"
                 Write-Host ""
             }
         } catch {
@@ -149,19 +147,29 @@ function Prompt-For-LicenseKey {
     }
 }
 
-# Prompt for license key before installation
-Prompt-For-LicenseKey
-
 # =============================================================================
 # LOCATE AUDIT SCRIPT
 # =============================================================================
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SourceAuditScript = Join-Path $ScriptDir "windows_audit.ps1"
+$SourceSupabaseHelper = Join-Path $ScriptDir "supabase_agent.py"
 
 if (-not (Test-Path $SourceAuditScript)) {
     Write-Host ""
     Write-Host "ERROR: windows_audit.ps1 was not found."
+    Write-Host ""
+    Write-Host "Place all files in the same directory:"
+    Write-Host "  install_endpoint_agent.ps1"
+    Write-Host "  windows_audit.ps1"
+    Write-Host "  supabase_agent.py"
+    Write-Host ""
+    exit 1
+}
+
+if (-not (Test-Path $SourceSupabaseHelper)) {
+    Write-Host ""
+    Write-Host "ERROR: supabase_agent.py was not found."
     Write-Host ""
     Write-Host "Place all files in the same directory:"
     Write-Host "  install_endpoint_agent.ps1"
@@ -189,24 +197,144 @@ function Install-Agent {
 
     Write-Host "Checking required commands..."
 
-    $RequiredCmds = @("powershell", "python")
-    foreach ($cmd in $RequiredCmds) {
-        if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
-            Write-Host "ERROR: Required command not found: $cmd"
-            Write-Host "Install Python 3 from https://www.python.org/downloads/windows/ (check 'Add python.exe to PATH')."
+    if (-not (Get-Command powershell -ErrorAction SilentlyContinue)) {
+        Write-Host "ERROR: PowerShell was not found."
+        exit 1
+    }
+
+    # -------------------------------------------------------------------------
+    # Python bootstrap
+    # -------------------------------------------------------------------------
+    # Prefer an existing real Python 3.12/3.13 installation. If Python is
+    # missing (or the Microsoft Store execution alias is the only "python"
+    # command available), download and install Python automatically.
+    # -------------------------------------------------------------------------
+
+    function Get-ValidPythonPath {
+        $Candidates = @()
+
+        # PATH candidates (ignore the Microsoft Store execution alias).
+        $PathCommands = @(Get-Command python.exe -All -ErrorAction SilentlyContinue)
+        foreach ($Command in $PathCommands) {
+            if ($Command.Source -and
+                $Command.Source -notlike "*\Microsoft\WindowsApps\python.exe") {
+                $Candidates += $Command.Source
+            }
+        }
+
+        # Common per-user and machine-wide installation locations.
+        $Candidates += @(
+            "$env:LocalAppData\Programs\Python\Python313\python.exe",
+            "$env:LocalAppData\Programs\Python\Python312\python.exe",
+            "$env:ProgramFiles\Python313\python.exe",
+            "$env:ProgramFiles\Python312\python.exe"
+        )
+
+        foreach ($Candidate in ($Candidates | Select-Object -Unique)) {
+            if (Test-Path $Candidate) {
+                $PreviousErrorActionPreference = $ErrorActionPreference
+                $ErrorActionPreference = "Continue"
+                & $Candidate --version *> $null
+                $ExitCode = $LASTEXITCODE
+                $ErrorActionPreference = $PreviousErrorActionPreference
+
+                if ($ExitCode -eq 0) {
+                    return $Candidate
+                }
+            }
+        }
+
+        return $null
+    }
+
+    function Install-PythonAutomatically {
+        # Python 3.12 is deliberately used because the existing installer
+        # requires psycopg2-binary and already documents 3.12/3.13 as supported.
+        $PythonVersion = "3.12.10"
+        $PythonInstallerUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-amd64.exe"
+        $PythonInstaller = Join-Path $env:TEMP "python-$PythonVersion-amd64.exe"
+
+        Write-Host ""
+        Write-Host "Python 3.12 was not found."
+        Write-Host "Downloading Python $PythonVersion automatically..."
+        Write-Host "URL: $PythonInstallerUrl"
+
+        try {
+            $ProgressPreference = "SilentlyContinue"
+            Invoke-WebRequest -Uri $PythonInstallerUrl -OutFile $PythonInstaller -UseBasicParsing
+        } catch {
+            Write-Host "ERROR: Failed to download Python."
+            Write-Host $_.Exception.Message
             exit 1
         }
+
+        if (-not (Test-Path $PythonInstaller)) {
+            Write-Host "ERROR: Python installer was not downloaded."
+            exit 1
+        }
+
+        Write-Host "Installing Python $PythonVersion silently..."
+
+        try {
+            # Install machine-wide, include pip, and do not require user input.
+            $InstallArgs = "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1 Include_test=0"
+            $Process = Start-Process -FilePath $PythonInstaller -ArgumentList $InstallArgs -Wait -PassThru
+
+            if ($Process.ExitCode -ne 0) {
+                Write-Host "ERROR: Python installation failed with exit code $($Process.ExitCode)."
+                exit 1
+            }
+        } catch {
+            Write-Host "ERROR: Failed to start the Python installer."
+            Write-Host $_.Exception.Message
+            exit 1
+        } finally {
+            if (Test-Path $PythonInstaller) {
+                Remove-Item $PythonInstaller -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Do not depend on the current PowerShell PATH being refreshed by the
+        # installer. Locate the actual executable directly.
+        $InstalledPython = Get-ValidPythonPath
+        if (-not $InstalledPython) {
+            $InstalledPython = "$env:ProgramFiles\Python312\python.exe"
+        }
+
+        if (-not (Test-Path $InstalledPython)) {
+            Write-Host "ERROR: Python was installed but python.exe could not be located."
+            exit 1
+        }
+
+        Write-Host "* Python installed successfully:"
+        Write-Host "  $InstalledPython"
+
+        return $InstalledPython
+    }
+
+    $PythonPath = Get-ValidPythonPath
+
+    if (-not $PythonPath) {
+        $PythonPath = Install-PythonAutomatically
     }
 
     # pip is invoked as 'python -m pip' throughout this script rather than as a
     # bare 'pip' command, since pip.exe is frequently missing from PATH on
     # Windows even when the pip module itself is present. Verify it works.
-    & python -m pip --version 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $PythonPath -m pip --version
+    $PipCheckExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $PreviousErrorActionPreference
+    if ($PipCheckExitCode -ne 0) {
         Write-Host "pip module not available - attempting to bootstrap it..."
-        & python -m ensurepip --upgrade 2>$null | Out-Null
-        & python -m pip --version 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        $ErrorActionPreference = "Continue"
+        & $PythonPath -m ensurepip --upgrade
+        $EnsurePipExitCode = $LASTEXITCODE
+        & $PythonPath -m pip --version
+        $PipCheckExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $PreviousErrorActionPreference
+        if ($EnsurePipExitCode -ne 0 -or $PipCheckExitCode -ne 0) {
             Write-Host "ERROR: pip is not available even after 'python -m ensurepip --upgrade'."
             Write-Host "Reinstall Python from https://www.python.org/downloads/windows/ with the 'pip' option checked."
             exit 1
@@ -222,13 +350,38 @@ function Install-Agent {
     Write-Host ""
     Write-Host "Installing Python dependencies..."
 
-    & python -m pip install psycopg2-binary 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $ErrorActionPreference = "Continue"
+    & $PythonPath -m pip install psycopg2-binary
+    $Psycopg2ExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $PreviousErrorActionPreference
+    if ($Psycopg2ExitCode -ne 0) {
         Write-Host "ERROR: Failed to install psycopg2-binary"
         exit 1
     }
 
+    $ErrorActionPreference = "Continue"
+    & $PythonPath -c "import psycopg2; print('psycopg2 import: OK')"
+    $Psycopg2ImportExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $PreviousErrorActionPreference
+    if ($Psycopg2ImportExitCode -ne 0) {
+        Write-Host "ERROR: psycopg2-binary is installed but cannot be imported by this Python runtime."
+        Write-Host "Python 3.14 is not supported reliably by all psycopg2-binary builds. Install Python 3.12 or 3.13, then run this installer again."
+        exit 1
+    }
+
     Write-Host "* psycopg2-binary installed"
+
+    # The helper reads connection details from process environment variables.
+    # Load the embedded values before direct license validation.
+    [System.Environment]::SetEnvironmentVariable("SUPABASE_HOST", $SupabaseHost, "Process")
+    [System.Environment]::SetEnvironmentVariable("SUPABASE_PORT", $SupabasePort, "Process")
+    [System.Environment]::SetEnvironmentVariable("SUPABASE_DB", $SupabaseDb, "Process")
+    [System.Environment]::SetEnvironmentVariable("SUPABASE_USER", $SupabaseUser, "Process")
+    [System.Environment]::SetEnvironmentVariable("SUPABASE_PASSWORD", $SupabasePassword, "Process")
+
+    # Prompt and validate the license only after psycopg2 and the direct
+    # Supabase helper are available, matching the Linux installation order.
+    Prompt-For-LicenseKey
 
     # =========================================================================
     # INSTALL B2 CLI
@@ -237,21 +390,30 @@ function Install-Agent {
     Write-Host ""
     Write-Host "Installing B2 CLI for audit report uploads..."
 
-    & python -m pip install b2 2>$null | Out-Null
+    $ErrorActionPreference = "Continue"
+    & $PythonPath -m pip install b2
+    $B2InstallExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $PreviousErrorActionPreference
 
     $B2Available = $false
-    if (Get-Command b2 -ErrorAction SilentlyContinue) {
-        $B2Available = $true
-    } else {
-        & python -m b2 version 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) { $B2Available = $true }
+    $B2Path = Join-Path (Split-Path $PythonPath -Parent) "Scripts\b2.exe"
+
+    if (Test-Path $B2Path) {
+        $ErrorActionPreference = "Continue"
+        & $B2Path version
+        $B2VersionExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $PreviousErrorActionPreference
+
+        if ($B2VersionExitCode -eq 0) {
+            $B2Available = $true
+        }
     }
 
     if ($B2Available) {
         Write-Host "* B2 CLI installed"
+        Write-Host "  $B2Path"
     } else {
         Write-Host "! B2 CLI not installed - audit uploads will fail"
-        Write-Host "  Install manually: python -m pip install b2"
     }
 
     # =========================================================================
@@ -261,6 +423,7 @@ function Install-Agent {
     Write-Host "Creating agent configuration..."
 
     New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 
     @"
 # Endpoint agent configuration
@@ -269,6 +432,7 @@ function Install-Agent {
 REPORT_DIR=$ReportDir
 HEALTH_INTERVAL=$HealthInterval
 AUDIT_HOUR=$AuditHour
+PYTHON_PATH=$PythonPath
 
 # License Configuration
 LICENSE_KEY=$LicenseKey
@@ -278,16 +442,16 @@ DEVICE_LIMIT=$DeviceLimit
 BACKEND_URL=$BackendUrl
 
 # Supabase PostgreSQL connection (direct, no API gateway)
-SUPABASE_HOST=aws-0-ap-southeast-1.pooler.supabase.com
-SUPABASE_PORT=6543
-SUPABASE_DB=postgres
-SUPABASE_USER=postgres.rzydluzduppsbjvczgfc
-SUPABASE_PASSWORD=Nm@2405#kis
+SUPABASE_HOST=$SupabaseHost
+SUPABASE_PORT=$SupabasePort
+SUPABASE_DB=$SupabaseDb
+SUPABASE_USER=$SupabaseUser
+SUPABASE_PASSWORD=$SupabasePassword
 
 # B2 credentials for audit report uploads
-B2_APPLICATION_KEY_ID=005b92fde5a0e0c0000000001
-B2_APPLICATION_KEY=K0057HU2vqAx/t2RQwJIFevGes8JYjg
-B2_BUCKET=Endpoint-Dashboard
+B2_APPLICATION_KEY_ID=$B2ApplicationKeyId
+B2_APPLICATION_KEY=$B2ApplicationKey
+B2_BUCKET=$B2Bucket
 "@ | Out-File -FilePath $ConfigFile -Encoding UTF8
 
     # Restrict ACL to Administrators + SYSTEM only (closest equivalent to chmod 600)
@@ -314,8 +478,6 @@ B2_BUCKET=Endpoint-Dashboard
     Write-Host ""
     Write-Host "Installing Supabase connection helper..."
 
-    $SourceSupabaseHelper = Join-Path $ScriptDir "supabase_agent.py"
-
     if (-not (Test-Path $SourceSupabaseHelper)) {
         Write-Host "WARNING: supabase_agent.py not found, skipping"
     } else {
@@ -336,6 +498,26 @@ B2_BUCKET=Endpoint-Dashboard
     Write-Host "Audit script installed:"
     Write-Host "  $AuditScript"
 
+    $AuditRunnerContent = @'
+$ErrorActionPreference = "Continue"
+$LogDir = "C:\ProgramData\EndpointAgent\Logs"
+$LogFile = Join-Path $LogDir "audit.log"
+New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+"[$(Get-Date -Format o)] Audit runner started as $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)" | Out-File -FilePath $LogFile -Append -Encoding UTF8
+try {
+    & "C:\Program Files\EndpointAgent\windows_audit.ps1" *>&1 | Tee-Object -FilePath $LogFile -Append
+    $ExitCode = $LASTEXITCODE
+    "[$(Get-Date -Format o)] Audit script exit code: $ExitCode" | Out-File -FilePath $LogFile -Append -Encoding UTF8
+    exit $ExitCode
+} catch {
+    "[$(Get-Date -Format o)] Audit runner error: $($_.Exception.Message)" | Out-File -FilePath $LogFile -Append -Encoding UTF8
+    exit 1
+}
+'@
+    Set-Content -Path $AuditRunnerScript -Value $AuditRunnerContent -Encoding UTF8
+    Write-Host "Audit runner installed:"
+    Write-Host "  $AuditRunnerScript"
+
     # =========================================================================
     # INSTALL HEARTBEAT AGENT
     # =========================================================================
@@ -355,6 +537,8 @@ B2_BUCKET=Endpoint-Dashboard
 # =============================================================================
 
 $ErrorActionPreference = "SilentlyContinue"
+New-Item -ItemType Directory -Path "C:\ProgramData\EndpointAgent\Logs" -Force | Out-Null
+Start-Transcript -Path "C:\ProgramData\EndpointAgent\Logs\heartbeat.log" -Append | Out-Null
 
 # =============================================================================
 # Load Configuration
@@ -378,6 +562,7 @@ if (Test-Path $ConfigFile) {
 $AgentVersion = "1.2"
 $AgentDir = "C:\Program Files\EndpointAgent"
 $SupabaseHelper = Join-Path $AgentDir "supabase_agent.py"
+$PythonPath = '__PYTHON_PATH__'
 
 # =============================================================================
 # Endpoint information
@@ -433,7 +618,7 @@ $PyArgs = @(
 )
 if ($WolEnabled) { $PyArgs += "--wol" }
 
-& python @PyArgs
+& $PythonPath @PyArgs
 if ($LASTEXITCODE -eq 0) {
     Write-Host "* Heartbeat sent to Supabase successfully"
 } else {
@@ -442,35 +627,24 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 # =============================================================================
-# Activate device with license key
+# Activate device with license key directly in Supabase
 # =============================================================================
 
-if ($env:LICENSE_KEY -and $env:BACKEND_URL) {
+if ($env:LICENSE_KEY) {
     Write-Host ""
     Write-Host "Activating device with license..."
-    
-    try {
-        $Body = @{ license_key = $env:LICENSE_KEY; mac_address = $MacVal } | ConvertTo-Json
-        $ActivationResponse = Invoke-WebRequest -Uri "$($env:BACKEND_URL)/api/licenses/activate-device/" `
-            -Method POST `
-            -Headers @{"Content-Type"="application/json"} `
-            -Body $Body `
-            -ErrorAction Stop `
-            -TimeoutSec 10 | Select-Object -ExpandProperty Content | ConvertFrom-Json
-        
-        if ($ActivationResponse.success -eq $true) {
-            Write-Host "* Device activated with license $($env:LICENSE_KEY)"
-        } else {
-            $ErrorMsg = if ($ActivationResponse.error) { $ActivationResponse.error } else { "Unknown error" }
-            Write-Host "! Device activation failed: $ErrorMsg"
-        }
-    } catch {
-        Write-Host "! Device activation failed: $($_.Exception.Message)"
+    & $PythonPath $SupabaseHelper activate_license --license-key $env:LICENSE_KEY --mac $MacVal
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "* Device activated with license $($env:LICENSE_KEY)"
+    } else {
+        Write-Host "! Device activation failed"
     }
 }
 
 exit 0
 '@
+
+    $HeartbeatAgentContent = $HeartbeatAgentContent.Replace('__PYTHON_PATH__', $PythonPath)
 
     Set-Content -Path $AgentScript -Value $HeartbeatAgentContent -Encoding UTF8
 
@@ -496,6 +670,8 @@ exit 0
 # =============================================================================
 
 $ErrorActionPreference = "SilentlyContinue"
+New-Item -ItemType Directory -Path "C:\ProgramData\EndpointAgent\Logs" -Force | Out-Null
+Start-Transcript -Path "C:\ProgramData\EndpointAgent\Logs\health.log" -Append | Out-Null
 
 # =============================================================================
 # LOAD CONFIGURATION
@@ -518,6 +694,7 @@ Get-Content $ConfigFile | ForEach-Object {
 
 $AgentDir = "C:\Program Files\EndpointAgent"
 $SupabaseHelper = Join-Path $AgentDir "supabase_agent.py"
+$PythonPath = '__PYTHON_PATH__'
 
 function Log-Msg { param([string]$Msg) Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $Msg" }
 
@@ -571,18 +748,24 @@ function Collect-And-Send-Health {
         [math]::Round((($sysDrive.Size - $sysDrive.FreeSpace) / $sysDrive.Size) * 100, 1)
     } else { 0.0 }
 
+    # UPTIME
+    $uptimeSeconds = if ($os.LastBootUpTime) {
+        [math]::Floor(((Get-Date) - $os.LastBootUpTime).TotalSeconds)
+    } else { 0 }
+
     if (-not (Test-Path $SupabaseHelper)) {
         Log-Msg "x Supabase helper not found: $SupabaseHelper"
         return $false
     }
 
-    Log-Msg "Sending health to Supabase (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%)"
+    Log-Msg "Sending health to Supabase (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s)"
 
-    & python $SupabaseHelper insert_health `
+    & $PythonPath $SupabaseHelper insert_health `
         --mac $macValue `
         --cpu $cpuPercent `
         --mem $memPercent `
         --disk $diskPercent `
+        --uptime $uptimeSeconds `
         --hostname $hostnameValue `
         --ip $ipValue 2>$null
 
@@ -602,6 +785,8 @@ if (-not (Collect-And-Send-Health)) {
 Log-Msg "* Health monitoring run finished"
 '@
 
+    $HealthAgentContent = $HealthAgentContent.Replace('__PYTHON_PATH__', $PythonPath)
+
     Set-Content -Path $HealthAgentScript -Value $HealthAgentContent -Encoding UTF8
 
     Write-Host "Health monitoring agent installed:"
@@ -618,21 +803,25 @@ Log-Msg "* Health monitoring run finished"
     $PwshPath = (Get-Command powershell).Source
     $CommonSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
     $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    # Task Scheduler rejects TimeSpan::MaxValue (P99999999...). Ten years is
+    # within the scheduler's supported range and keeps these recurring tasks
+    # effectively permanent until the installer is run again.
+    $TaskRepetitionDuration = New-TimeSpan -Days 3650
 
     # --- Heartbeat: every 1 minute ---
     $HeartbeatAction = New-ScheduledTaskAction -Execute $PwshPath -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$AgentScript`""
-    $HeartbeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration ([TimeSpan]::MaxValue)
+    $HeartbeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 1) -RepetitionDuration $TaskRepetitionDuration
     Register-ScheduledTask -TaskName $HeartbeatTaskName -Action $HeartbeatAction -Trigger $HeartbeatTrigger -Settings $CommonSettings -Principal $Principal -Force | Out-Null
     Write-Host "  * $HeartbeatTaskName (every 1 min)"
 
     # --- Health monitor: every 2 minutes ---
     $HealthAction = New-ScheduledTaskAction -Execute $PwshPath -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$HealthAgentScript`""
-    $HealthTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Seconds $HealthInterval) -RepetitionDuration ([TimeSpan]::MaxValue)
+    $HealthTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Seconds $HealthInterval) -RepetitionDuration $TaskRepetitionDuration
     Register-ScheduledTask -TaskName $HealthTaskName -Action $HealthAction -Trigger $HealthTrigger -Settings $CommonSettings -Principal $Principal -Force | Out-Null
     Write-Host "  * $HealthTaskName (every $HealthInterval sec)"
 
     # --- Daily audit: at AuditHour ---
-    $AuditAction = New-ScheduledTaskAction -Execute $PwshPath -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$AuditScript`""
+    $AuditAction = New-ScheduledTaskAction -Execute $PwshPath -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$AuditRunnerScript`""
     $AuditTrigger = New-ScheduledTaskTrigger -Daily -At $AuditHour
     Register-ScheduledTask -TaskName $AuditTaskName -Action $AuditAction -Trigger $AuditTrigger -Settings $CommonSettings -Principal $Principal -Force | Out-Null
     Write-Host "  * $AuditTaskName (daily at $AuditHour)"
@@ -668,7 +857,16 @@ Log-Msg "* Health monitoring run finished"
     Write-Host " Running initial audit test"
     Write-Host "=================================================="
     Write-Host ""
-    Start-ScheduledTask -TaskName $AuditTaskName
+
+    & $PwshPath -NoProfile -ExecutionPolicy Bypass -File $AuditRunnerScript
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host ""
+        Write-Host "* Initial audit completed successfully"
+    } else {
+        Write-Host ""
+        Write-Host "x Initial audit failed with exit code $LASTEXITCODE"
+    }
 
     # =========================================================================
     # FINAL STATUS

@@ -247,18 +247,20 @@ function SortHeader({
 }
 
 function MetricCell({ value }: { value: number }) {
+  const normalizedValue = Math.min(100, Math.max(0, value ?? 0));
+
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full px-2 py-0.5 font-mono text-xs font-semibold",
-        value < 70
+        normalizedValue < 70
           ? "bg-success/15 text-success"
-          : value <= 85
+          : normalizedValue <= 85
             ? "bg-warning/15 text-warning"
             : "bg-destructive/15 text-destructive",
       )}
     >
-      {formatPercent(value)}
+      {formatPercent(normalizedValue)}
     </span>
   );
 }

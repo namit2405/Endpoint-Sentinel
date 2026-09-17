@@ -14,18 +14,18 @@ describe("Overview page", () => {
       within(connection).getByText("Total Endpoints").parentElement,
     ).toHaveTextContent("20");
     expect(within(connection).getByText("Online")).toBeInTheDocument();
-    expect(within(connection).getByText("Warning")).toBeInTheDocument();
+    expect(within(connection).getByText("Connection warning")).toBeInTheDocument();
     expect(within(connection).getByText("Offline")).toBeInTheDocument();
   });
 
-  it("renders risk KPI cards for Healthy, Warning, and Critical", async () => {
+  it("renders risk KPI cards for Healthy, Security warning, and Critical", async () => {
     renderApp();
 
     const risk = await screen.findByRole("region", {
       name: "Risk posture summary",
     });
     expect(within(risk).getByText("Healthy")).toBeInTheDocument();
-    expect(within(risk).getByText("Warning")).toBeInTheDocument();
+    expect(within(risk).getByText("Security warning")).toBeInTheDocument();
     expect(within(risk).getByText("Critical")).toBeInTheDocument();
   });
 

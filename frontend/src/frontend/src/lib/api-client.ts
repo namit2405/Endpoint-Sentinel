@@ -3,15 +3,17 @@
  * Handles all communication with the Endpoint Sentinel backend.
  */
 
+import { getStoredAccountType } from "./auth";
 import type {
-  EndpointStatus,
   DashboardSummary,
+  EndpointStatus,
   HealthTrendPoint,
   OSDistribution,
   QuickAlert,
 } from "./types";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
 
 interface ApiResponse<T> {
   data: T;
@@ -42,7 +44,11 @@ class APIClient {
       "Content-Type": "application/json",
     };
     if (this.token) {
-      headers["Authorization"] = `Bearer ${this.token}`;
+      headers["Authorization"] = `Token ${this.token}`;
+    }
+    const accountType = getStoredAccountType();
+    if (accountType) {
+      headers["X-Account-Type"] = accountType;
     }
     return headers;
   }
@@ -65,6 +71,17 @@ class APIClient {
     }
 
     return response.json();
+  }
+
+  async downloadAuditReport(reportId: number): Promise<Blob> {
+    const response = await fetch(
+      `${this.baseUrl}/api/dashboard/machine/${reportId}/download/`,
+      { headers: this.getHeaders() },
+    );
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.statusText}`);
+    }
+    return response.blob();
   }
 
   // ── Dashboard Overview ──────────────────────────────────────────────
@@ -305,6 +322,10 @@ class APIClient {
     count: number;
   }> {
     return this.request("/api/endpoints/status/");
+  }
+
+  async fetchLatestReports(): Promise<{ status: string; message: string }> {
+    return this.request("/api/dashboard/fetch-latest/", { method: "POST" });
   }
 }
 

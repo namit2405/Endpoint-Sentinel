@@ -18,6 +18,7 @@ export interface UseEndpointsResult {
   summary: DashboardSummary;
   lastRefreshed: number;
   isRefreshing: boolean;
+  hasLoaded: boolean;
   refresh: () => void;
   error: string | null;
   retry: () => void;
@@ -35,6 +36,7 @@ export function useEndpoints(
   const [endpoints, setEndpoints] = useState<EndpointStatus[]>([]);
   const [lastRefreshed, setLastRefreshed] = useState(() => Date.now());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch endpoints from backend
@@ -59,6 +61,7 @@ export function useEndpoints(
       );
       setEndpoints([]);
     } finally {
+      setHasLoaded(true);
       setIsRefreshing(false);
     }
   };
@@ -89,6 +92,7 @@ export function useEndpoints(
     summary,
     lastRefreshed,
     isRefreshing,
+    hasLoaded,
     refresh,
     error,
     retry,

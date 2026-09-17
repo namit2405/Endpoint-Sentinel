@@ -12,7 +12,7 @@ Stores metrics for dashboard display and trend analysis.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -20,6 +20,7 @@ from django.views.decorators.http import require_http_methods
 from django.utils.timezone import now
 
 from .models import EndpointDevice, EndpointStatus, EndpointMetricsHistory
+from .health import calculate_health_score
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +97,16 @@ def health_monitoring(request):
         )
         
         # Update with latest health data
+        heartbeat_time = now()
         endpoint.hostname = hostname
         endpoint.os = os_type or endpoint.os
         endpoint.ip_address = data.get("ip_address", "").strip() or endpoint.ip_address
-        endpoint.last_seen = now()
+        if (
+            not endpoint.connection_started_at
+            or heartbeat_time - endpoint.last_seen > timedelta(minutes=2)
+        ):
+            endpoint.connection_started_at = heartbeat_time
+        endpoint.last_seen = heartbeat_time
         
         # Extract health_metrics from nested structure (supports both nested and flat)
         health_data = data.get("health_metrics", {})
@@ -111,11 +118,17 @@ def health_monitoring(request):
         endpoint.cpu_percent = health_data.get("cpu_percent")
         endpoint.memory_percent = health_data.get("memory_percent")
         endpoint.disk_percent = health_data.get("disk_percent")
+        endpoint.uptime_seconds = health_data.get("uptime_seconds")
         endpoint.process_count = health_data.get("process_count")
         endpoint.firewall_active = health_data.get("firewall_active")
         endpoint.antivirus_active = health_data.get("antivirus_active")
-        endpoint.health_status = health_data.get("health_status", endpoint.health_status)
-        endpoint.health_score = health_data.get("health_score", endpoint.health_score)
+        endpoint.health_score, endpoint.health_status = calculate_health_score(
+            endpoint.cpu_percent,
+            endpoint.memory_percent,
+            endpoint.disk_percent,
+            endpoint.firewall_active,
+            endpoint.antivirus_active,
+        )
         
         # Store timestamp of last health check
         endpoint.last_health_check = now()
@@ -141,8 +154,9 @@ def health_monitoring(request):
             cpu_percent=health_data.get("cpu_percent"),
             memory_percent=health_data.get("memory_percent"),
             disk_percent=health_data.get("disk_percent"),
-            health_status=health_data.get("health_status", "healthy"),
-            health_score=health_data.get("health_score", 100.0),
+            uptime_seconds=health_data.get("uptime_seconds"),
+            health_status=endpoint.health_status,
+            health_score=endpoint.health_score,
             firewall_active=health_data.get("firewall_active"),
             antivirus_active=health_data.get("antivirus_active"),
         )
@@ -189,6 +203,7 @@ def health_status(request, hostname):
             "cpu_percent": endpoint.cpu_percent,
             "memory_percent": endpoint.memory_percent,
             "disk_percent": endpoint.disk_percent,
+            "uptime_seconds": endpoint.uptime_seconds,
             "health_status": endpoint.health_status,
             "health_score": endpoint.health_score,
         }

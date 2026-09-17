@@ -28,6 +28,7 @@ import {
   riskScoreColor,
   timeAgo,
 } from "@/lib/format";
+import { apiClient } from "@/lib/api-client";
 import type { EndpointStatus, OS, RiskLevel } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
 import { Link } from "@tanstack/react-router";
@@ -37,6 +38,7 @@ import {
   ChevronsUpDown,
   Download,
   Filter,
+  RefreshCw,
   Search,
   Server,
   SlidersHorizontal,
@@ -149,13 +151,15 @@ function toCsv(endpoints: EndpointStatus[]): string {
 }
 
 export default function InventoryPage() {
-  const { endpoints, isRefreshing } = useEndpoints();
+  const { endpoints, isRefreshing, refresh } = useEndpoints();
   const [search, setSearch] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("risk");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [loading, setLoading] = useState(true);
+  const [fetchingLatest, setFetchingLatest] = useState(false);
+  const [fetchLatestError, setFetchLatestError] = useState<string | null>(null);
 
   // Simulate a brief initial load so skeleton states are visible.
   useEffect(() => {
@@ -223,6 +227,23 @@ export default function InventoryPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleFetchLatest = async () => {
+    setFetchingLatest(true);
+    setFetchLatestError(null);
+    try {
+      await apiClient.fetchLatestReports();
+      refresh();
+    } catch (error) {
+      setFetchLatestError(
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch latest reports",
+      );
+    } finally {
+      setFetchingLatest(false);
+    }
+  };
+
   const SortHeader = ({
     label,
     sortableKey,
@@ -278,7 +299,18 @@ export default function InventoryPage() {
             className="pl-9"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            data-ocid="inventory.fetch_latest_button"
+            variant="outline"
+            onClick={handleFetchLatest}
+            disabled={fetchingLatest}
+          >
+            <RefreshCw
+              className={`size-4 ${fetchingLatest ? "animate-spin" : ""}`}
+            />
+            {fetchingLatest ? "Fetching..." : "Fetch latest"}
+          </Button>
           <Button
             data-ocid="inventory.export_button"
             variant="outline"
@@ -290,6 +322,11 @@ export default function InventoryPage() {
           </Button>
         </div>
       </div>
+      {fetchLatestError && (
+        <p className="text-sm text-destructive" role="alert">
+          {fetchLatestError}
+        </p>
+      )}
 
       {/* Advanced filters */}
       <Collapsible

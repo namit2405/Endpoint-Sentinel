@@ -33,6 +33,8 @@ export default {
           DEFAULT: "oklch(var(--destructive) / <alpha-value>)",
           foreground: "oklch(var(--destructive-foreground))",
         },
+        success: "oklch(var(--success) / <alpha-value>)",
+        warning: "oklch(var(--warning) / <alpha-value>)",
         muted: {
           DEFAULT: "oklch(var(--muted) / <alpha-value>)",
           foreground: "oklch(var(--muted-foreground) / <alpha-value>)",

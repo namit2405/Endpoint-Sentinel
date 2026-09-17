@@ -140,7 +140,7 @@ function ChartCard({
 }
 
 export default function OverviewPage() {
-  const { endpoints, summary, isRefreshing, lastRefreshed } = useEndpoints();
+  const { endpoints, summary, isRefreshing, lastRefreshed, hasLoaded } = useEndpoints();
 
   const healthTrend = useMemo(() => getHealthTrend(endpoints), [endpoints]);
   const osDistribution = useMemo(
@@ -188,7 +188,7 @@ export default function OverviewPage() {
       ocid: "overview.kpi.online",
     },
     {
-      label: "Warning",
+      label: "Connection warning",
       value: summary.warning,
       status: "warning",
       icon: <AlertTriangle className="size-5" />,
@@ -222,7 +222,7 @@ export default function OverviewPage() {
       ocid: "overview.risk.healthy",
     },
     {
-      label: "Warning",
+      label: "Security warning",
       value: summary.atRisk,
       health: "warning",
       icon: <ShieldAlert className="size-5" />,
@@ -239,7 +239,7 @@ export default function OverviewPage() {
     },
   ];
 
-  const loading = endpoints.length === 0;
+  const loading = !hasLoaded;
 
   return (
     <div className="space-y-6">

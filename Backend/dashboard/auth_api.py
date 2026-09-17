@@ -82,7 +82,7 @@ def login(request):
       return JsonResponse({
         "error": "Invalid credentials"
       }, status=401)
-    
+
     # Get or create token
     token, created = Token.objects.get_or_create(user=user)
 
@@ -99,13 +99,14 @@ def login(request):
         or user.get_full_name()
         or user.username
       )
-    
+
     return JsonResponse({
         "user_id": user.id,
         "username": user.username,
         "email": user.email,
         "first_name": user.first_name,
         "last_name": user.last_name,
+        "account_type": account_type,
         "account_name": account_name,
         "token": token.key
     })

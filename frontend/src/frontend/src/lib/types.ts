@@ -41,7 +41,13 @@ export interface EndpointAudit {
   riskLevel: RiskLevel;
   riskFindings: RiskFinding[];
   reportDate: string;
+  reportId: number | null;
   s3ObjectKey: string;
+  history: Array<{
+    reportId: number;
+    reportDate: string;
+    s3ObjectKey: string;
+  }>;
 }
 
 export interface EndpointStatus {
@@ -52,6 +58,7 @@ export interface EndpointStatus {
   cpu_percent: number;
   memory_percent: number;
   disk_percent: number;
+  uptime_seconds: number | null;
   health_score: number;
   health_status: HealthStatus;
   firewall_active: boolean;

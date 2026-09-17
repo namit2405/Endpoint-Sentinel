@@ -29,6 +29,7 @@ import type {
   SecurityControls,
 } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
+import { apiClient } from "@/lib/api-client";
 import { useParams } from "@tanstack/react-router";
 import {
   Cpu,
@@ -117,29 +118,14 @@ function formatDate(iso: string): string {
   });
 }
 
-function downloadReport(endpoint: EndpointStatus) {
-  const report = {
-    hostname: endpoint.hostname,
-    mac_address: endpoint.mac_address,
-    ip_address: endpoint.ip_address,
-    os: endpoint.os,
-    report_date: endpoint.audit.reportDate,
-    risk_score: endpoint.audit.riskScore,
-    risk_level: endpoint.audit.riskLevel,
-    hardware: endpoint.audit.hardware,
-    security: endpoint.audit.security,
-    pending_updates: endpoint.audit.pendingUpdates,
-    last_patch_date: endpoint.audit.lastPatchDate,
-    pass_max_days: endpoint.audit.passMaxDays,
-    findings: endpoint.audit.riskFindings,
-  };
-  const blob = new Blob([JSON.stringify(report, null, 2)], {
-    type: "application/json",
-  });
+async function downloadReport(endpoint: EndpointStatus) {
+  if (!endpoint.audit.reportId) return;
+
+  const blob = await apiClient.downloadAuditReport(endpoint.audit.reportId);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${endpoint.hostname}-audit-report.json`;
+  a.download = `${endpoint.hostname}-audit-report.html`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -228,8 +214,8 @@ function ControlToggle({
                 aria-label={`${label} ${enabled ? "enabled" : "disabled"}`}
                 className={
                   enabled
-                    ? "data-[state=checked]:bg-success"
-                    : "data-[state=checked]:bg-destructive"
+                    ? "border-border/80 disabled:opacity-100 data-[state=checked]:bg-success"
+                    : "border-border/80 disabled:opacity-100 data-[state=unchecked]:bg-destructive/45 data-[state=checked]:bg-destructive"
                 }
               />
             </span>
@@ -310,25 +296,11 @@ export default function EndpointDetailPage() {
   }
 
   const { audit } = endpoint;
-  const lastAudit = parseReportDate(audit.reportDate)?.getTime() ?? Date.now();
-
-  const history = [
-    { date: audit.reportDate, key: audit.s3ObjectKey, current: true },
-    {
-      date: new Date(lastAudit - 7 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-      key: audit.s3ObjectKey.replace(/\/[^/]+$/, "/previous.json"),
-      current: false,
-    },
-    {
-      date: new Date(lastAudit - 14 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10),
-      key: audit.s3ObjectKey.replace(/\/[^/]+$/, "/older.json"),
-      current: false,
-    },
-  ];
+  const history = audit.history.map((report, index) => ({
+    date: report.reportDate,
+    key: (report.s3ObjectKey || `Report #${report.reportId}`).split("?")[0],
+    current: index === 0,
+  }));
 
   return (
     <div className="space-y-6">
@@ -348,10 +320,16 @@ export default function EndpointDetailPage() {
               </Badge>
               <Badge
                 variant="outline"
-                className={`rounded-full ${riskScoreBg(audit.riskScore)}`}
+                className={`rounded-full ${
+                  audit.riskLevel === "high"
+                    ? "bg-destructive/15 text-destructive"
+                    : audit.riskLevel === "medium"
+                      ? "bg-warning/15 text-warning"
+                      : "bg-success/15 text-success"
+                }`}
                 data-ocid="endpoint_detail.risk_badge"
               >
-                Risk {audit.riskScore}
+                Score {audit.riskScore}
               </Badge>
             </div>
             <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm">
@@ -419,7 +397,7 @@ export default function EndpointDetailPage() {
             </div>
             <Progress
               value={audit.hardware.diskPercent}
-              className={utilizationBarColor(audit.hardware.diskPercent)}
+              indicatorClassName={utilizationBarColor(audit.hardware.diskPercent)}
               aria-label={`Disk usage ${formatPercent(audit.hardware.diskPercent)}`}
             />
           </div>
@@ -436,6 +414,10 @@ export default function EndpointDetailPage() {
             <StatRow label="IP address" value={endpoint.ip_address} mono />
             <StatRow label="MAC address" value={endpoint.mac_address} mono />
             <StatRow label="Last seen" value={timeAgo(endpoint.last_seen)} />
+            <StatRow
+              label="Device uptime"
+              value={endpoint.uptime_seconds == null ? "Unavailable" : formatUptime(endpoint.uptime_seconds * 1000)}
+            />
             <StatRow
               label="Connection uptime"
               value={formatUptime(endpoint.connection_uptime)}
@@ -535,7 +517,7 @@ export default function EndpointDetailPage() {
             </div>
             <Progress
               value={Math.min(100, audit.pendingUpdates * 2)}
-              className={utilizationBarColor(audit.pendingUpdates * 2)}
+              indicatorClassName={utilizationBarColor(audit.pendingUpdates * 2)}
               aria-label={`${audit.pendingUpdates} pending updates`}
             />
           </div>

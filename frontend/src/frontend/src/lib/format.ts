@@ -35,7 +35,9 @@ export function formatUptime(ms: number): string {
   const hours = Math.floor((ms % DAY) / HOUR);
   if (days > 0) return `${days}d ${hours}h`;
   const mins = Math.floor((ms % HOUR) / MIN);
-  return `${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  if (mins > 0) return `${mins}m`;
+  return `${Math.max(1, Math.floor(ms / 1000))}s`;
 }
 
 /** Map a health status to a semantic color token. */

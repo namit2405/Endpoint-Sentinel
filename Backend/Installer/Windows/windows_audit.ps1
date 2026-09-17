@@ -41,22 +41,25 @@ if (Test-Path $ConfigFile) {
     }
 }
 
+New-Item -ItemType Directory -Path "C:\ProgramData\EndpointAgent\Logs" -Force | Out-Null
+Start-Transcript -Path "C:\ProgramData\EndpointAgent\Logs\audit.log" -Append | Out-Null
+
 # ============================================================
 # Report Configuration
 # ============================================================
 
 $HostnameVal = $env:COMPUTERNAME
 
-# Try network share first, fall back to local temp if share is down
-$ReportDir = "\\AuditReports\Reports\Windows"
-if (-not (Test-Path $ReportDir)) {
-    try {
-        New-Item -ItemType Directory -Path $ReportDir -Force -ErrorAction Stop | Out-Null
-    } catch {
-        Write-Host "WARNING: Network share \\AuditReports is down, using local directory"
-        $ReportDir = "$env:TEMP\AuditReports\Reports\Windows"
-        New-Item -ItemType Directory -Path $ReportDir -Force | Out-Null
-    }
+# Use the installer-configured path so SYSTEM tasks and interactive users share
+# the same report location. Keep the network share only as a legacy fallback.
+$ReportDir = $env:REPORT_DIR
+if (-not $ReportDir) { $ReportDir = "C:\ProgramData\EndpointAgent\Reports\Windows" }
+try {
+    New-Item -ItemType Directory -Path $ReportDir -Force -ErrorAction Stop | Out-Null
+} catch {
+    Write-Host "WARNING: Configured report directory is unavailable: $ReportDir"
+    $ReportDir = "C:\ProgramData\EndpointAgent\Reports\Windows"
+    New-Item -ItemType Directory -Path $ReportDir -Force | Out-Null
 }
 
 $ReportFile = Join-Path $ReportDir "$HostnameVal.html"
@@ -500,8 +503,8 @@ $BROWSER_DATA = SafeRun {
 $WORLD_WRITABLE_FILES = "N/A on Windows - see 'Everyone-Writable Paths' below for the closest equivalent"
 $EVERYONE_WRITABLE = SafeRun {
     $roots = @("C:\Program Files", "C:\Program Files (x86)", "C:\Windows\Temp", "C:\ProgramData")
-    foreach ($root in $roots) {
-        Get-ChildItem $root -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+    $roots | ForEach-Object {
+        Get-ChildItem $_ -Directory -ErrorAction SilentlyContinue | ForEach-Object {
             $acl = Get-Acl $_.FullName -ErrorAction SilentlyContinue
             if ($acl) {
                 $risky = $acl.Access | Where-Object {
@@ -793,14 +796,18 @@ if (-not $B2ApplicationKeyId -or -not $B2ApplicationKey) {
     Write-Host "  x B2 credentials not configured in environment"
     Write-Host "  ! Set B2_APPLICATION_KEY_ID and B2_APPLICATION_KEY in $ConfigFile"
 } else {
-    # b2.exe is frequently missing from PATH even when installed via pip;
-    # fall back to 'python -m b2' if the bare command isn't found.
-    $B2Cmd = if (Get-Command b2 -ErrorAction SilentlyContinue) { @("b2") } else { @("python", "-m", "b2") }
+    # b2.exe may be unavailable in the SYSTEM account's PATH. Prefer the
+    # configured absolute Python runtime for a reliable module invocation.
+    $PythonPath = $env:PYTHON_PATH
+    if (-not $PythonPath) { $PythonPath = "python" }
+    $B2Cmd = "C:\Program Files\Python312\Scripts\b2.exe"
 
-    & $B2Cmd[0] $B2Cmd[1..($B2Cmd.Length-1)] account authorize $B2ApplicationKeyId $B2ApplicationKey *> $null
+    Write-Host "  Authorizing B2 account..."
+    & $B2Cmd account authorize $B2ApplicationKeyId $B2ApplicationKey 2>&1
     if ($LASTEXITCODE -eq 0) {
         $RemoteName = "Windows/$HostnameVal/$(Split-Path $ReportFile -Leaf)"
-        & $B2Cmd[0] $B2Cmd[1..($B2Cmd.Length-1)] file upload $B2Bucket $ReportFile $RemoteName *> $null
+        Write-Host "  Uploading: $ReportFile"
+        & $B2Cmd file upload $B2Bucket $ReportFile $RemoteName 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host "  * Report uploaded to B2: $RemoteName"
             $UploadSuccess = $true

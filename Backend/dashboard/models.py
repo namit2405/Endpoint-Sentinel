@@ -177,6 +177,7 @@ class EndpointStatus(models.Model):
     # ── Agent presence ────────────────────────────────────────────────────
     agent_version = models.CharField(max_length=20, blank=True)
     last_seen = models.DateTimeField()
+    connection_started_at = models.DateTimeField(null=True, blank=True)
     last_health_check = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -187,6 +188,7 @@ class EndpointStatus(models.Model):
     cpu_percent = models.FloatField(null=True, blank=True)          # CPU usage %
     memory_percent = models.FloatField(null=True, blank=True)       # Memory usage %
     disk_percent = models.FloatField(null=True, blank=True)         # Disk usage %
+    uptime_seconds = models.BigIntegerField(null=True, blank=True)  # Device uptime in seconds
     process_count = models.IntegerField(null=True, blank=True)      # Active processes
     
     # ── Security status ───────────────────────────────────────────────────
@@ -311,6 +313,7 @@ class EndpointMetricsHistory(models.Model):
     cpu_percent = models.FloatField(null=True, blank=True)
     memory_percent = models.FloatField(null=True, blank=True)
     disk_percent = models.FloatField(null=True, blank=True)
+    uptime_seconds = models.BigIntegerField(null=True, blank=True)
     
     # ── Health assessment ─────────────────────────────────────────────────
     health_status = models.CharField(

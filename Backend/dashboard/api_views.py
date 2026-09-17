@@ -9,20 +9,35 @@ Endpoints:
   GET  /api/dashboard/search/        — full-text search across fields
 """
 import json
+import os
+from urllib.parse import parse_qs, urlsplit
+from io import StringIO
 from datetime import timedelta
 
+import boto3
+from botocore.exceptions import ClientError
 from django.conf import settings
+from django.core.management import call_command
 from django.db.models import Avg, Count, Max, Q
-from django.http import JsonResponse
+from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import EndpointReport, EndpointStatus, EndpointCommand, PowerActionLog
+from .models import (
+    EndpointDevice,
+    EndpointReport,
+    EndpointStatus,
+    EndpointCommand,
+    PowerActionLog,
+    LicenseDeviceRecord,
+)
 from .risk import calculate, DEDUCTIONS
 
 
@@ -49,6 +64,62 @@ def _latest_per_host(qs=None):
     for row in latest_ids:
         q |= Q(hostname=row["hostname"], report_date=row["latest"])
     return qs.filter(q) if q else qs.none()
+
+
+def _account_type(request):
+    """Return the account selected at login, if it is valid."""
+    selected = request.headers.get("X-Account-Type", "").strip().lower()
+    return selected if selected in {"company", "individual"} else None
+
+
+def _owned_endpoint_ids(request):
+    """Return endpoint identities owned by the authenticated account."""
+    if not request.user.is_authenticated:
+        return set(), set()
+
+    account_type = _account_type(request)
+    if account_type == "individual":
+        records = LicenseDeviceRecord.objects.filter(
+            license__individual__user=request.user,
+            deactivated_at__isnull=True,
+        )
+    elif account_type == "company":
+        company_ids = set()
+        company_admin = getattr(request.user, "company_admin", None)
+        employee = getattr(request.user, "employee", None)
+        if company_admin:
+            company_ids.add(company_admin.pk)
+        if employee:
+            company_ids.add(employee.company_id)
+        records = LicenseDeviceRecord.objects.filter(
+            license__company_id__in=company_ids,
+            deactivated_at__isnull=True,
+        ) if company_ids else LicenseDeviceRecord.objects.none()
+    else:
+        return set(), set()
+
+    mac_addresses = set(records.values_list("mac_address", flat=True))
+    endpoint_ids = set(records.exclude(endpoint_id__isnull=True).values_list("endpoint_id", flat=True))
+    endpoint_ids.update(
+        EndpointDevice.objects.filter(mac_address__in=mac_addresses).values_list("pk", flat=True)
+    )
+    return endpoint_ids, mac_addresses
+
+
+def _scope_reports(request, reports):
+    """Limit reports to devices activated by the selected account."""
+    endpoint_ids, mac_addresses = _owned_endpoint_ids(request)
+    return reports.filter(
+        Q(endpoint_device_id__in=endpoint_ids) | Q(mac_address__in=mac_addresses)
+    )
+
+
+def _scope_statuses(request, statuses):
+    """Limit live endpoint statuses to devices activated by the selected account."""
+    endpoint_ids, mac_addresses = _owned_endpoint_ids(request)
+    return statuses.filter(
+        Q(endpoint_device_id__in=endpoint_ids) | Q(mac_address__in=mac_addresses)
+    )
 
 
 def _serialize_report(report):
@@ -132,6 +203,7 @@ def _serialize_endpoint_status(ep):
         "cpu_percent": ep.cpu_percent,
         "memory_percent": ep.memory_percent,
         "disk_percent": ep.disk_percent,
+        "uptime_seconds": ep.uptime_seconds,
         "process_count": ep.process_count,
         "firewall_active": ep.firewall_active,
         "antivirus_active": ep.antivirus_active,
@@ -141,12 +213,14 @@ def _serialize_endpoint_status(ep):
 # ── API Endpoints ────────────────────────────────────────────────────────────
 
 @api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def overview(request):
     """
     GET /api/dashboard/overview/
     Returns fleet summary, charts, and aggregated statistics.
     """
-    fleet = _latest_per_host()
+    fleet = _latest_per_host(_scope_reports(request, EndpointReport.objects.all()))
 
     total = fleet.count()
     windows = fleet.filter(os_type="windows").count()
@@ -185,7 +259,7 @@ def overview(request):
 
     # Heartbeat presence counts
     _now = now()
-    all_statuses = EndpointStatus.objects.all()
+    all_statuses = _scope_statuses(request, EndpointStatus.objects.all())
     online_count = sum(1 for s in all_statuses if (_now - s.last_seen) <= timedelta(minutes=1))
     warning_count = sum(1 for s in all_statuses if timedelta(minutes=1) < (_now - s.last_seen) <= timedelta(minutes=2))
     offline_count = sum(1 for s in all_statuses if (_now - s.last_seen) > timedelta(minutes=2))
@@ -234,13 +308,15 @@ def overview(request):
 
 
 @api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def inventory(request):
     """
     GET /api/dashboard/inventory/
     Query params: os, risk, firewall, antivirus, encryption, q (search)
     Returns filterable list of machines.
     """
-    fleet = _latest_per_host()
+    fleet = _latest_per_host(_scope_reports(request, EndpointReport.objects.all()))
 
     # Filters from query string
     os_filter = request.GET.get("os", "")
@@ -292,17 +368,40 @@ def inventory(request):
     })
 
 
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def fetch_latest_reports(request):
+    """Fetch and import the latest audit reports from Backblaze B2."""
+    command_output = StringIO()
+    try:
+        call_command('fetch_b2_reports', stdout=command_output, stderr=command_output)
+    except Exception as exc:
+        return Response(
+            {"detail": f"Failed to fetch latest reports: {exc}"},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response({
+        "status": "ok",
+        "message": "Latest reports fetched successfully.",
+        "output": command_output.getvalue(),
+    })
+
+
 @api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def machine_detail(request, pk):
     """
     GET /api/dashboard/machine/<id>/
     Returns detailed report for a single endpoint with history and findings.
     """
-    report = get_object_or_404(EndpointReport, pk=pk)
+    report = get_object_or_404(_scope_reports(request, EndpointReport.objects.all()), pk=pk)
 
     # History: all reports for this hostname, newest first
     history = list(
-        EndpointReport.objects
+        _scope_reports(request, EndpointReport.objects.all())
         .filter(hostname=report.hostname)
         .order_by("-report_date")
         .values("pk", "report_date", "risk_score", "risk_level", "pending_updates")
@@ -397,22 +496,83 @@ def machine_detail(request, pk):
 
 
 @api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def download_report(request, pk):
+    """Download the original HTML report stored in Backblaze B2."""
+    report = get_object_or_404(
+        _scope_reports(request, EndpointReport.objects.all()),
+        pk=pk,
+    )
+    if not report.s3_object_key:
+        return Response(
+            {"detail": "No Backblaze B2 report is stored for this audit."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        b2_client = boto3.client(
+            "s3",
+            endpoint_url=getattr(
+                settings,
+                "B2_ENDPOINT",
+                "https://s3.us-east-005.backblazeb2.com",
+            ),
+            aws_access_key_id=settings.B2_APPLICATION_KEY_ID,
+            aws_secret_access_key=settings.B2_APPLICATION_KEY,
+            region_name=getattr(settings, "B2_REGION", "us-east-005"),
+        )
+        key_parts = urlsplit(report.s3_object_key)
+        get_args = {
+            "Bucket": settings.B2_BUCKET,
+            "Key": key_parts.path,
+        }
+        version_id = parse_qs(key_parts.query).get("versionId", [None])[0]
+        if version_id:
+            get_args["VersionId"] = version_id
+        b2_response = b2_client.get_object(**get_args)
+    except ClientError:
+        return Response(
+            {"detail": "The original audit report could not be found in Backblaze B2."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    filename = os.path.basename(key_parts.path) or f"{report.hostname}.html"
+    response = StreamingHttpResponse(
+        b2_response["Body"].iter_chunks(chunk_size=1024 * 64),
+        content_type=b2_response.get("ContentType", "text/html"),
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if b2_response.get("ContentLength") is not None:
+        response["Content-Length"] = str(b2_response["ContentLength"])
+    return response
+
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def compare(request):
     """
     GET /api/dashboard/compare/
     Query params: a (report_id_1), b (report_id_2)
     Returns side-by-side comparison of two machines.
     """
-    all_machines = _latest_per_host().order_by("hostname").values("id", "hostname")
+    all_machines = _latest_per_host(
+        _scope_reports(request, EndpointReport.objects.all())
+    ).order_by("hostname").values("id", "hostname")
 
     report_a = report_b = None
     id_a = request.GET.get("a")
     id_b = request.GET.get("b")
 
     if id_a:
-        report_a = get_object_or_404(EndpointReport, pk=id_a)
+        report_a = get_object_or_404(
+            _scope_reports(request, EndpointReport.objects.all()), pk=id_a
+        )
     if id_b:
-        report_b = get_object_or_404(EndpointReport, pk=id_b)
+        report_b = get_object_or_404(
+            _scope_reports(request, EndpointReport.objects.all()), pk=id_b
+        )
 
     COMPARE_FIELDS = [
         ("OS", "os_name"),
@@ -453,6 +613,8 @@ def compare(request):
 
 
 @api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def search(request):
     """
     GET /api/dashboard/search/
@@ -462,7 +624,7 @@ def search(request):
     q = request.GET.get("q", "").strip()
     results = []
     if q:
-        fleet = _latest_per_host()
+        fleet = _latest_per_host(_scope_reports(request, EndpointReport.objects.all()))
         results = [
             _serialize_report(m) for m in fleet.filter(
                 Q(hostname__icontains=q)

@@ -19,13 +19,19 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.utils.timezone import now
 from django.db.models import Q
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import IsAuthenticated
 
 from .models import EndpointStatus, EndpointMetricsHistory
+from .api_views import _scope_statuses
 
 logger = logging.getLogger(__name__)
 
 
-@require_http_methods(["GET"])
+@api_view(["GET"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def current_metrics(request):
     """Get latest CPU/memory/disk metrics for all endpoints.
     
@@ -53,7 +59,7 @@ def current_metrics(request):
     }
     """
     try:
-        endpoints = EndpointStatus.objects.all()
+        endpoints = _scope_statuses(request, EndpointStatus.objects.all())
         
         data = {
             "endpoints": [],
@@ -70,6 +76,7 @@ def current_metrics(request):
                 "cpu_percent": endpoint.cpu_percent,
                 "memory_percent": endpoint.memory_percent,
                 "disk_percent": endpoint.disk_percent,
+                "uptime_seconds": endpoint.uptime_seconds,
                 "firewall_active": endpoint.firewall_active,
                 "antivirus_active": endpoint.antivirus_active,
                 "health_status": endpoint.health_status,
@@ -146,6 +153,7 @@ def historical_metrics(request, hostname):
                 "cpu_percent": metric.cpu_percent,
                 "memory_percent": metric.memory_percent,
                 "disk_percent": metric.disk_percent,
+                "uptime_seconds": metric.uptime_seconds,
                 "health_status": metric.health_status,
                 "health_score": metric.health_score,
                 "firewall_active": metric.firewall_active,

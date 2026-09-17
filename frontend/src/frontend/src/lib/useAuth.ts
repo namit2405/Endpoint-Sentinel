@@ -64,19 +64,20 @@ function useAuthState() {
         throw new Error(data.error || "Invalid credentials");
       }
 
+      const resolvedAccountType = data.account_type || typeToUse;
       const authUser: AuthUser = {
         id: data.user_id,
         username: data.username,
         email: data.email,
-        accountType: typeToUse,
+        accountType: resolvedAccountType,
         accountName:
           data.account_name || data.username ||
-          (typeToUse === "company" ? "Company Account" : "Individual Account"),
+          (resolvedAccountType === "company" ? "Company Account" : "Individual Account"),
         createdAt: new Date().toISOString(),
       };
 
       setStoredAuth(authUser, data.token);
-      setAccountTypeState(typeToUse);
+      setAccountTypeState(resolvedAccountType);
       setUserState(authUser);
       setTokenState(data.token);
     } catch (err) {

@@ -124,6 +124,8 @@ FILEBASE_SECRET_KEY = config('FILEBASE_SECRET_KEY', default='')
 B2_APPLICATION_KEY_ID = config('B2_APPLICATION_KEY_ID', default='')
 B2_APPLICATION_KEY = config('B2_APPLICATION_KEY', default='')
 B2_BUCKET = config('B2_BUCKET', default='Endpoint-Dashboard')
+B2_ENDPOINT = config('B2_ENDPOINT', default='https://s3.us-east-005.backblazeb2.com')
+B2_REGION = config('B2_REGION', default='us-east-005')
 
 # Local reports directory (fallback if Filebase unavailable)
 REPORTS_BASE_DIR = BASE_DIR / "Reports"
@@ -168,6 +170,7 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-requested-with',
+    'x-account-type',
 ]
 
 # ── REST Framework Configuration ───────────────────────────────────────────────

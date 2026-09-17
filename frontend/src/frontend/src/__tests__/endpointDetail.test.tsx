@@ -89,6 +89,6 @@ describe("Endpoint Detail page", () => {
 
     expect(screen.getByText("Related Reports")).toBeInTheDocument();
     expect(screen.getByText("Latest audit report")).toBeInTheDocument();
-    expect(screen.getAllByText("Previous audit").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Previous audit")).not.toBeInTheDocument();
   });
 });

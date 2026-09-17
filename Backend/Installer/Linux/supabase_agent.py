@@ -7,7 +7,7 @@ directly to Supabase PostgreSQL without going through Django API.
 
 Usage:
     python3 supabase_agent.py insert_heartbeat --hostname SYSTEM-53 --mac "AA:BB:CC:DD:EE:FF" --ip 192.168.8.40
-    python3 supabase_agent.py insert_health --mac "AA:BB:CC:DD:EE:FF" --cpu 45.2 --mem 60.5 --disk 75.0
+    python3 supabase_agent.py insert_health --mac "AA:BB:CC:DD:EE:FF" --cpu 45.2 --mem 60.5 --disk 75.0 --uptime 86400
 """
 
 import sys
@@ -39,6 +39,30 @@ class SupabaseAgent:
     # Retry configuration
     MAX_RETRIES = 3
     RETRY_DELAY = 1  # seconds, increases exponentially
+
+    @staticmethod
+    def calculate_health_score(cpu_percent, memory_percent, disk_percent, firewall_active, antivirus_active):
+        deductions = 0
+        for value in (cpu_percent, memory_percent):
+            if value >= 95:
+                deductions += 30
+            elif value >= 85:
+                deductions += 20
+            elif value >= 75:
+                deductions += 10
+        if disk_percent >= 95:
+            deductions += 25
+        elif disk_percent >= 85:
+            deductions += 15
+        elif disk_percent >= 75:
+            deductions += 5
+        if firewall_active is False:
+            deductions += 15
+        if antivirus_active is False:
+            deductions += 15
+        score = max(0, 100 - deductions)
+        status = "healthy" if score >= 75 else "warning" if score >= 50 else "critical"
+        return score, status
 
     def __init__(self, verbose: bool = False):
         """Initialize Supabase connection."""
@@ -126,8 +150,8 @@ class SupabaseAgent:
             query = sql.SQL(
                 """
                 INSERT INTO dashboard_endpointstatus 
-                (hostname, os, ip_address, mac_address, username, agent_version, wol_enabled, last_seen, updated_at, health_score, health_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 100.0, 'healthy')
+                (hostname, os, ip_address, mac_address, username, agent_version, wol_enabled, last_seen, connection_started_at, updated_at, health_score, health_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW(), 100.0, 'healthy')
                 ON CONFLICT (mac_address) DO UPDATE SET
                     hostname = EXCLUDED.hostname,
                     os = EXCLUDED.os,
@@ -136,6 +160,12 @@ class SupabaseAgent:
                     agent_version = EXCLUDED.agent_version,
                     wol_enabled = EXCLUDED.wol_enabled,
                     last_seen = NOW(),
+                    connection_started_at = CASE
+                        WHEN dashboard_endpointstatus.connection_started_at IS NULL
+                             OR dashboard_endpointstatus.last_seen < NOW() - INTERVAL '2 minutes'
+                        THEN NOW()
+                        ELSE dashboard_endpointstatus.connection_started_at
+                    END,
                     updated_at = NOW()
                 """
             )
@@ -160,16 +190,17 @@ class SupabaseAgent:
         cpu_percent: float,
         memory_percent: float,
         disk_percent: float,
+        uptime_seconds: int,
         hostname: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> bool:
         """Insert health monitoring data into EndpointStatus table."""
         try:
             if self.verbose:
-                print(f"Inserting health data for {mac_address} (CPU: {cpu_percent}%, MEM: {memory_percent}%, DISK: {disk_percent}%)", file=sys.stderr)
+                print(f"Inserting health data for {mac_address} (CPU: {cpu_percent}%, MEM: {memory_percent}%, DISK: {disk_percent}%, UPTIME: {uptime_seconds}s)", file=sys.stderr)
 
             # First, get the EndpointStatus to link the report
-            endpoint_query = "SELECT id, hostname, os FROM dashboard_endpointstatus WHERE mac_address = %s LIMIT 1"
+            endpoint_query = "SELECT id, hostname, os, firewall_active, antivirus_active FROM dashboard_endpointstatus WHERE mac_address = %s LIMIT 1"
             self.cursor.execute(endpoint_query, (mac_address,))
             endpoint_row = self.cursor.fetchone()
 
@@ -178,7 +209,10 @@ class SupabaseAgent:
                     print(f"WARNING: No EndpointStatus found for MAC {mac_address}, skipping health insert", file=sys.stderr)
                 return False
 
-            endpoint_id, endpoint_hostname, endpoint_os = endpoint_row
+            endpoint_id, endpoint_hostname, endpoint_os, firewall_active, antivirus_active = endpoint_row
+            health_score, health_status = self.calculate_health_score(
+                cpu_percent, memory_percent, disk_percent, firewall_active, antivirus_active
+            )
             if hostname is None:
                 hostname = endpoint_hostname
             if ip_address is None:
@@ -191,12 +225,13 @@ class SupabaseAgent:
             update_query = sql.SQL(
                 """
                 UPDATE dashboard_endpointstatus
-                SET cpu_percent = %s, memory_percent = %s, disk_percent = %s, last_health_check = NOW()
+                SET cpu_percent = %s, memory_percent = %s, disk_percent = %s, uptime_seconds = %s,
+                    health_score = %s, health_status = %s, last_health_check = NOW()
                 WHERE mac_address = %s
                 """
             )
 
-            self.cursor.execute(update_query, (cpu_percent, memory_percent, disk_percent, mac_address))
+            self.cursor.execute(update_query, (cpu_percent, memory_percent, disk_percent, uptime_seconds, health_score, health_status, mac_address))
             self.conn.commit()
 
             if self.verbose:
@@ -371,6 +406,7 @@ def main():
     health_parser.add_argument("--cpu", type=float, required=True, help="CPU percent")
     health_parser.add_argument("--mem", type=float, required=True, help="Memory percent")
     health_parser.add_argument("--disk", type=float, required=True, help="Disk percent")
+    health_parser.add_argument("--uptime", type=int, required=True, help="Device uptime in seconds")
     health_parser.add_argument("--hostname", help="Hostname (optional, will use EndpointStatus)")
     health_parser.add_argument("--ip", help="IP address (optional, will use EndpointStatus)")
 
@@ -408,6 +444,7 @@ def main():
                 cpu_percent=args.cpu,
                 memory_percent=args.mem,
                 disk_percent=args.disk,
+                uptime_seconds=args.uptime,
                 hostname=args.hostname,
                 ip_address=args.ip,
             )

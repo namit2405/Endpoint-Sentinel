@@ -140,24 +140,26 @@ function sortValue(e: EndpointStatus, key: SortKey): string | number {
 }
 
 function MetricCell({ value }: { value: number }) {
+  const normalizedValue = Math.min(100, Math.max(0, value ?? 0));
+
   return (
     <div className="flex min-w-[7rem] items-center gap-2">
       <div
         role="progressbar"
-        aria-valuenow={Math.round(value)}
+        aria-valuenow={Math.round(normalizedValue)}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`${Math.round(value)}% utilization`}
+        aria-label={`${Math.round(normalizedValue)}% utilization`}
         tabIndex={0}
         className="h-2 w-16 overflow-hidden rounded-full bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <div
-          className={cn("h-full rounded-full", utilizationBarColor(value))}
-          style={{ width: `${Math.min(100, value)}%` }}
+          className={cn("h-full rounded-full", utilizationBarColor(normalizedValue))}
+          style={{ width: `${normalizedValue}%` }}
         />
       </div>
       <span className="w-9 shrink-0 text-right font-mono text-xs text-muted-foreground">
-        {formatPercent(value)}
+        {formatPercent(normalizedValue)}
       </span>
     </div>
   );

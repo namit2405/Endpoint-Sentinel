@@ -10,9 +10,11 @@ Usage:
 import boto3
 import re
 from datetime import datetime
+from urllib.parse import quote
 from django.core.management.base import BaseCommand
 from django.conf import settings
 from dashboard.models import EndpointDevice, EndpointReport, EndpointStatus
+from dashboard.risk import calculate
 
 
 class Command(BaseCommand):
@@ -265,28 +267,37 @@ class Command(BaseCommand):
             )
             return
 
-        # List objects in bucket
-        self.stdout.write(f'Fetching reports from B2...')
+        # List every stored version. B2's normal object listing only returns
+        # the current version and hides the audit history visible in the B2 UI.
+        self.stdout.write(f'Fetching report versions from B2...')
         try:
-            response = s3_client.list_objects_v2(Bucket=bucket)
-            contents = response.get('Contents', [])
+            paginator = s3_client.get_paginator('list_object_versions')
+            contents = []
+            for page in paginator.paginate(Bucket=bucket):
+                contents.extend(page.get('Versions', []))
         except Exception as e:
             self.stdout.write(
-                self.style.ERROR(f'Failed to list B2 objects: {e}')
+                self.style.ERROR(f'Failed to list B2 report versions: {e}')
             )
             return
 
         # Filter HTML reports
         html_files = [obj for obj in contents if obj['Key'].endswith('.html')]
-        self.stdout.write(
-            self.style.SUCCESS(f'Found {len(html_files)} HTML report(s) in B2')
-        )
+        self.stdout.write(self.style.SUCCESS(
+            f'Found {len(html_files)} HTML report version(s) in B2'
+        ))
 
         imported = 0
         for obj in html_files:
             filename = obj['Key']
             size = obj['Size']
             last_modified = obj['LastModified']
+            version_id = obj.get('VersionId')
+            versioned_key = (
+                f'{filename}?versionId={quote(version_id, safe="")}'
+                if version_id and version_id != 'null'
+                else filename
+            )
 
             # Parse: Linux/SYSTEM-53/SYSTEM-53.html
             parts = filename.split('/')
@@ -303,7 +314,10 @@ class Command(BaseCommand):
             # Download HTML from B2
             self.stdout.write(f'  Downloading {report_name}...')
             try:
-                response = s3_client.get_object(Bucket=bucket, Key=filename)
+                get_args = {'Bucket': bucket, 'Key': filename}
+                if version_id and version_id != 'null':
+                    get_args['VersionId'] = version_id
+                response = s3_client.get_object(**get_args)
                 html_content = response['Body'].read().decode('utf-8', errors='ignore')
             except Exception as e:
                 self.stdout.write(
@@ -313,6 +327,8 @@ class Command(BaseCommand):
 
             # Parse security metrics from HTML
             parsed_data = self.parse_html_report(html_content)
+            parsed_data["os_type"] = os_type
+            risk_score, risk_level, _ = calculate(parsed_data)
             
             # Debug output
             self.stdout.write(f'    Parsed firewall_enabled: {parsed_data.get("firewall_enabled")}')
@@ -329,8 +345,16 @@ class Command(BaseCommand):
                 else:
                     cpu_str = "Unknown"  # Default value instead of None
                 
+                # Reuse the pre-versioning current row for the latest version
+                # so fetching history does not leave a duplicate current row.
+                existing_current = EndpointReport.objects.filter(
+                    s3_object_key=filename
+                ).first() if obj.get('IsLatest') else None
+                if existing_current:
+                    existing_current.s3_object_key = versioned_key
+                    existing_current.save(update_fields=['s3_object_key'])
                 report, created = EndpointReport.objects.update_or_create(
-                    s3_object_key=filename,
+                    s3_object_key=versioned_key,
                     defaults={
                         'endpoint_device': EndpointDevice.objects.filter(
                             mac_address=endpoint_status.mac_address
@@ -339,7 +363,9 @@ class Command(BaseCommand):
                         'os_type': os_type,
                         'mac_address': endpoint_status.mac_address if endpoint_status else None,
                         'report_date': last_modified,
-                        'ip_address': parsed_data.get('ip_address'),
+                        'ip_address': parsed_data.get('ip_address') or (
+                            endpoint_status.ip_address if endpoint_status else ''
+                        ),
                         'os_name': parsed_data.get('os_version'),  # Full OS name
                         'os_version': parsed_data.get('os_version'),  # Store again for compatibility
                         'architecture': parsed_data.get('architecture'),
@@ -361,11 +387,12 @@ class Command(BaseCommand):
                         'pass_min_days': parsed_data.get('pass_min_days'),
                         'pass_min_len': parsed_data.get('pass_min_len'),
                         'lockout_threshold': parsed_data.get('lockout_threshold'),
-                        'risk_score': parsed_data.get('risk_score', 50),
-                        'risk_level': parsed_data.get('risk_level', 'warning'),
+                        'risk_score': risk_score,
+                        'risk_level': risk_level,
                         'raw_data': {
                             'b2_size': size,
                             'b2_filename': filename,
+                            'b2_version_id': version_id,
                             'b2_url': f'https://f005.backblazeb2.com/file/{bucket}/{filename}',
                             'cpu_count': parsed_data.get('cpu_count'),
                             'disk_usage_percent': parsed_data.get('disk_usage_percent'),

@@ -16,7 +16,7 @@ and the default paths referenced by callers differ:
 
 Usage (same on Windows, from an elevated or user PowerShell prompt):
     python supabase_agent.py insert_heartbeat --hostname SYSTEM-53 --os "Windows 11 Pro" --ip 192.168.8.40 --mac "AA:BB:CC:DD:EE:FF"
-    python supabase_agent.py insert_health --mac "AA:BB:CC:DD:EE:FF" --cpu 45.2 --mem 60.5 --disk 75.0
+    python supabase_agent.py insert_health --mac "AA:BB:CC:DD:EE:FF" --cpu 45.2 --mem 60.5 --disk 75.0 --uptime 86400
 
 Install dependency on Windows:
     pip install psycopg2-binary
@@ -33,8 +33,9 @@ from typing import Optional, Dict, Any
 try:
     import psycopg2
     from psycopg2 import sql
-except ImportError:
-    print("ERROR: psycopg2 not installed. Install with: pip install psycopg2-binary", file=sys.stderr)
+except ImportError as error:
+    print(f"ERROR: psycopg2 could not be imported: {error}", file=sys.stderr)
+    print("Install a Python version supported by psycopg2-binary, preferably Python 3.12 or 3.13.", file=sys.stderr)
     sys.exit(1)
 
 
@@ -54,6 +55,30 @@ class SupabaseAgent:
     # Retry configuration
     MAX_RETRIES = 3
     RETRY_DELAY = 1  # seconds, increases exponentially
+
+    @staticmethod
+    def calculate_health_score(cpu_percent, memory_percent, disk_percent, firewall_active, antivirus_active):
+        deductions = 0
+        for value in (cpu_percent, memory_percent):
+            if value >= 95:
+                deductions += 30
+            elif value >= 85:
+                deductions += 20
+            elif value >= 75:
+                deductions += 10
+        if disk_percent >= 95:
+            deductions += 25
+        elif disk_percent >= 85:
+            deductions += 15
+        elif disk_percent >= 75:
+            deductions += 5
+        if firewall_active is False:
+            deductions += 15
+        if antivirus_active is False:
+            deductions += 15
+        score = max(0, 100 - deductions)
+        status = "healthy" if score >= 75 else "warning" if score >= 50 else "critical"
+        return score, status
 
     def __init__(self, verbose: bool = False):
         """Initialize Supabase connection."""
@@ -141,8 +166,8 @@ class SupabaseAgent:
             query = sql.SQL(
                 """
                 INSERT INTO dashboard_endpointstatus
-                (hostname, os, ip_address, mac_address, username, agent_version, wol_enabled, last_seen, updated_at, health_score, health_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), 100.0, 'healthy')
+                (hostname, os, ip_address, mac_address, username, agent_version, wol_enabled, last_seen, connection_started_at, updated_at, health_score, health_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW(), 100.0, 'healthy')
                 ON CONFLICT (mac_address) DO UPDATE SET
                     hostname = EXCLUDED.hostname,
                     os = EXCLUDED.os,
@@ -151,6 +176,12 @@ class SupabaseAgent:
                     agent_version = EXCLUDED.agent_version,
                     wol_enabled = EXCLUDED.wol_enabled,
                     last_seen = NOW(),
+                    connection_started_at = CASE
+                        WHEN dashboard_endpointstatus.connection_started_at IS NULL
+                             OR dashboard_endpointstatus.last_seen < NOW() - INTERVAL '2 minutes'
+                        THEN NOW()
+                        ELSE dashboard_endpointstatus.connection_started_at
+                    END,
                     updated_at = NOW()
                 """
             )
@@ -175,16 +206,17 @@ class SupabaseAgent:
         cpu_percent: float,
         memory_percent: float,
         disk_percent: float,
+        uptime_seconds: int,
         hostname: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> bool:
         """Insert health monitoring data into EndpointStatus table."""
         try:
             if self.verbose:
-                print(f"Inserting health data for {mac_address} (CPU: {cpu_percent}%, MEM: {memory_percent}%, DISK: {disk_percent}%)", file=sys.stderr)
+                print(f"Inserting health data for {mac_address} (CPU: {cpu_percent}%, MEM: {memory_percent}%, DISK: {disk_percent}%, UPTIME: {uptime_seconds}s)", file=sys.stderr)
 
             # First, get the EndpointStatus to link the report
-            endpoint_query = "SELECT id, hostname, os FROM dashboard_endpointstatus WHERE mac_address = %s LIMIT 1"
+            endpoint_query = "SELECT id, hostname, os, firewall_active, antivirus_active FROM dashboard_endpointstatus WHERE mac_address = %s LIMIT 1"
             self.cursor.execute(endpoint_query, (mac_address,))
             endpoint_row = self.cursor.fetchone()
 
@@ -193,7 +225,10 @@ class SupabaseAgent:
                     print(f"WARNING: No EndpointStatus found for MAC {mac_address}, skipping health insert", file=sys.stderr)
                 return False
 
-            endpoint_id, endpoint_hostname, endpoint_os = endpoint_row
+            endpoint_id, endpoint_hostname, endpoint_os, firewall_active, antivirus_active = endpoint_row
+            health_score, health_status = self.calculate_health_score(
+                cpu_percent, memory_percent, disk_percent, firewall_active, antivirus_active
+            )
             if hostname is None:
                 hostname = endpoint_hostname
             if ip_address is None:
@@ -206,12 +241,13 @@ class SupabaseAgent:
             update_query = sql.SQL(
                 """
                 UPDATE dashboard_endpointstatus
-                SET cpu_percent = %s, memory_percent = %s, disk_percent = %s, last_health_check = NOW()
+                SET cpu_percent = %s, memory_percent = %s, disk_percent = %s, uptime_seconds = %s,
+                    health_score = %s, health_status = %s, last_health_check = NOW()
                 WHERE mac_address = %s
                 """
             )
 
-            self.cursor.execute(update_query, (cpu_percent, memory_percent, disk_percent, mac_address))
+            self.cursor.execute(update_query, (cpu_percent, memory_percent, disk_percent, uptime_seconds, health_score, health_status, mac_address))
             self.conn.commit()
 
             if self.verbose:
@@ -223,6 +259,119 @@ class SupabaseAgent:
             print(f"ERROR: Failed to insert health data: {e}", file=sys.stderr)
             if self.conn:
                 self.conn.rollback()
+            return False
+
+    def activate_license(self, license_key: str, mac_address: str) -> bool:
+        """Validate a license and activate this MAC address atomically."""
+        try:
+            self.cursor.execute("BEGIN")
+            self.cursor.execute(
+                """
+                SELECT id, status, device_limit, valid_from, expires_at
+                FROM dashboard_license
+                WHERE license_key = %s
+                FOR UPDATE
+                """,
+                (license_key,),
+            )
+            license_row = self.cursor.fetchone()
+            if not license_row:
+                print("ERROR: License not found", file=sys.stderr)
+                self.conn.rollback()
+                return False
+
+            license_id, status, device_limit, valid_from, expires_at = license_row
+            current_time = datetime.now().astimezone()
+            if status != "active" or (valid_from and current_time < valid_from) or current_time > expires_at:
+                print(f"ERROR: License is not valid (status: {status})", file=sys.stderr)
+                self.conn.rollback()
+                return False
+
+            self.cursor.execute(
+                """
+                SELECT id FROM dashboard_licensedevicerecord
+                WHERE license_id = %s AND mac_address = %s AND deactivated_at IS NULL
+                """,
+                (license_id, mac_address),
+            )
+            if self.cursor.fetchone():
+                self.conn.commit()
+                print("License device already activated", file=sys.stderr)
+                return True
+
+            self.cursor.execute(
+                """
+                SELECT COUNT(DISTINCT mac_address)
+                FROM dashboard_licensedevicerecord
+                WHERE license_id = %s AND deactivated_at IS NULL
+                """,
+                (license_id,),
+            )
+            devices_used = self.cursor.fetchone()[0]
+            if devices_used >= device_limit:
+                print(f"ERROR: Device limit reached ({devices_used}/{device_limit})", file=sys.stderr)
+                self.conn.rollback()
+                return False
+
+            self.cursor.execute(
+                "SELECT id FROM dashboard_endpointstatus WHERE mac_address = %s LIMIT 1",
+                (mac_address,),
+            )
+            endpoint_row = self.cursor.fetchone()
+            endpoint_id = endpoint_row[0] if endpoint_row else None
+
+            self.cursor.execute(
+                """
+                INSERT INTO dashboard_licensedevicerecord
+                    (license_id, mac_address, activated_at, deactivated_at, endpoint_id, activated_by_id, notes)
+                VALUES (%s, %s, NOW(), NULL, %s, NULL, '')
+                """,
+                (license_id, mac_address, endpoint_id),
+            )
+            self.conn.commit()
+            print(f"License activated ({devices_used + 1}/{device_limit})", file=sys.stderr)
+            return True
+        except psycopg2.Error as error:
+            print(f"ERROR: License activation failed: {error}", file=sys.stderr)
+            self.conn.rollback()
+            return False
+
+    def validate_license(self, license_key: str) -> bool:
+        """Validate a license directly in Supabase and print its summary."""
+        try:
+            self.cursor.execute(
+                """
+                SELECT id, status, device_limit, valid_from, expires_at
+                FROM dashboard_license
+                WHERE license_key = %s
+                """,
+                (license_key,),
+            )
+            license_row = self.cursor.fetchone()
+            if not license_row:
+                print("ERROR: License not found", file=sys.stderr)
+                return False
+
+            license_id, status, device_limit, valid_from, expires_at = license_row
+            current_time = datetime.now().astimezone()
+            valid = status == "active" and (not valid_from or current_time >= valid_from) and current_time <= expires_at
+            if not valid:
+                print(f"ERROR: License is not valid (status: {status})", file=sys.stderr)
+                return False
+
+            self.cursor.execute(
+                """
+                SELECT COUNT(DISTINCT mac_address)
+                FROM dashboard_licensedevicerecord
+                WHERE license_id = %s AND deactivated_at IS NULL
+                """,
+                (license_id,),
+            )
+            devices_used = self.cursor.fetchone()[0]
+            print(f"License valid ({devices_used}/{device_limit} devices)", file=sys.stderr)
+            return True
+        except psycopg2.Error as error:
+            print(f"ERROR: License validation failed: {error}", file=sys.stderr)
             return False
 
     def get_endpoint_status(self, mac_address: str) -> Optional[Dict[str, Any]]:
@@ -272,8 +421,16 @@ def main():
     health_parser.add_argument("--cpu", type=float, required=True, help="CPU percent")
     health_parser.add_argument("--mem", type=float, required=True, help="Memory percent")
     health_parser.add_argument("--disk", type=float, required=True, help="Disk percent")
+    health_parser.add_argument("--uptime", type=int, required=True, help="Device uptime in seconds")
     health_parser.add_argument("--hostname", help="Hostname (optional, will use EndpointStatus)")
     health_parser.add_argument("--ip", help="IP address (optional, will use EndpointStatus)")
+
+    license_parser = subparsers.add_parser("activate_license", help="Validate and activate a device")
+    license_parser.add_argument("--license-key", required=True, help="License key")
+    license_parser.add_argument("--mac", required=True, help="MAC address")
+
+    validate_parser = subparsers.add_parser("validate_license", help="Validate a license")
+    validate_parser.add_argument("--license-key", required=True, help="License key")
 
     args = parser.parse_args()
 
@@ -302,9 +459,18 @@ def main():
                 cpu_percent=args.cpu,
                 memory_percent=args.mem,
                 disk_percent=args.disk,
+                uptime_seconds=args.uptime,
                 hostname=args.hostname,
                 ip_address=args.ip,
             )
+            sys.exit(0 if success else 1)
+
+        elif args.command == "activate_license":
+            success = agent.activate_license(args.license_key, args.mac)
+            sys.exit(0 if success else 1)
+
+        elif args.command == "validate_license":
+            success = agent.validate_license(args.license_key)
             sys.exit(0 if success else 1)
 
     finally:
