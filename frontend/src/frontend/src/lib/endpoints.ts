@@ -25,6 +25,7 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
       uptime_seconds: ep.uptime_seconds ?? null,
       health_score: ep.health_score ?? 100,
       health_status: (ep.health_status ?? "healthy") as "healthy" | "warning" | "critical",
+      wol_enabled: ep.wol_enabled ?? null,
       firewall_active: ep.firewall_active ?? false,
       antivirus_active: ep.antivirus_active ?? false,
       last_seen: new Date(ep.last_seen).getTime(),

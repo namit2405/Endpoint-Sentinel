@@ -395,6 +395,35 @@ class SupabaseAgent:
             print(f"ERROR: Failed to query endpoint status: {e}", file=sys.stderr)
             return None
 
+    def poll_commands(self, mac_address: str) -> list[dict]:
+        """Claim pending power commands for this endpoint."""
+        self.cursor.execute(
+            """
+            UPDATE dashboard_endpointcommand AS command
+            SET status = 'delivered', sent_at = NOW(), updated_at = NOW()
+            FROM dashboard_endpointstatus AS endpoint
+            WHERE command.endpoint_id = endpoint.id
+              AND endpoint.mac_address = %s
+              AND command.status IN ('pending', 'delivering')
+            RETURNING command.id, command.command
+            """,
+            (mac_address,),
+        )
+        commands = [{"id": row[0], "command": row[1]} for row in self.cursor.fetchall()]
+        self.conn.commit()
+        return commands
+
+    def complete_command(self, command_id: int, status: str, message: str) -> bool:
+        self.cursor.execute(
+            """
+            UPDATE dashboard_endpointcommand
+            SET status = %s, result_message = %s, completed_at = NOW(), updated_at = NOW()
+            WHERE id = %s
+            """,
+            (status, message, command_id),
+        )
+        self.conn.commit()
+        return self.cursor.rowcount == 1
 
 def main():
     """CLI entry point."""
@@ -431,6 +460,13 @@ def main():
 
     validate_parser = subparsers.add_parser("validate_license", help="Validate a license")
     validate_parser.add_argument("--license-key", required=True, help="License key")
+
+    commands_parser = subparsers.add_parser("poll_commands", help="Claim pending power commands")
+    commands_parser.add_argument("--mac", required=True, help="MAC address")
+    complete_parser = subparsers.add_parser("complete_command", help="Complete a power command")
+    complete_parser.add_argument("--id", type=int, required=True, help="Command ID")
+    complete_parser.add_argument("--status", choices=["success", "failed"], required=True)
+    complete_parser.add_argument("--message", required=True)
 
     args = parser.parse_args()
 
@@ -471,6 +507,14 @@ def main():
 
         elif args.command == "validate_license":
             success = agent.validate_license(args.license_key)
+            sys.exit(0 if success else 1)
+
+        elif args.command == "poll_commands":
+            print(json.dumps(agent.poll_commands(args.mac)))
+            sys.exit(0)
+
+        elif args.command == "complete_command":
+            success = agent.complete_command(args.id, args.status, args.message)
             sys.exit(0 if success else 1)
 
     finally:

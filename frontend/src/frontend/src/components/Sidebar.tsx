@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   type LucideIcon,
   MonitorCheck,
+  Power,
   Search,
   Server,
   ShieldCheck,
@@ -26,6 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
     icon: Gauge,
   },
   { label: "Inventory", to: "/inventory", icon: Server },
+  { label: "Power Management", to: "/power", icon: Power },
   { label: "Compare", to: "/compare", icon: MonitorCheck },
   { label: "Search", to: "/search", icon: Search },
 ];

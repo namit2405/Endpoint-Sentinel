@@ -18,7 +18,6 @@ import json
 from datetime import timedelta
 
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
@@ -210,6 +209,7 @@ def endpoints_status(request):
             ) if ep.connection_started_at and status != "offline" else 0,
             "health_score": health_score,
             "health_status": health_status,
+            "wol_enabled": ep.wol_enabled,
             "cpu_percent": ep.cpu_percent,
             "memory_percent": ep.memory_percent,
             "disk_percent": ep.disk_percent,
@@ -414,15 +414,20 @@ def agent_report_command_result(request, command_id):
 
 # ── Power Management API ─────────────────────────────────────────────────────
 
-@login_required
-@require_POST
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def power_on_wol(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/on/
     Trigger Wake-on-LAN for an offline endpoint.
     """
     try:
-        endpoint = EndpointStatus.objects.get(hostname=hostname)
+        endpoint = _scope_statuses(
+            request, EndpointStatus.objects.filter(hostname=hostname)
+        ).first()
+        if endpoint is None:
+            raise EndpointStatus.DoesNotExist
     except EndpointStatus.DoesNotExist:
         return JsonResponse(
             {"success": False, "message": f"Endpoint '{hostname}' not found"},
@@ -490,15 +495,20 @@ def power_on_wol(request, hostname):
         }, status=500)
 
 
-@login_required
-@require_POST
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def power_shutdown(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/shutdown/
     Queue a shutdown command for the endpoint.
     """
     try:
-        endpoint = EndpointStatus.objects.get(hostname=hostname)
+        endpoint = _scope_statuses(
+            request, EndpointStatus.objects.filter(hostname=hostname)
+        ).first()
+        if endpoint is None:
+            raise EndpointStatus.DoesNotExist
     except EndpointStatus.DoesNotExist:
         return JsonResponse(
             {"success": False, "message": f"Endpoint '{hostname}' not found"},
@@ -542,15 +552,20 @@ def power_shutdown(request, hostname):
     })
 
 
-@login_required
-@require_POST
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def power_restart(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/restart/
     Queue a restart command for the endpoint.
     """
     try:
-        endpoint = EndpointStatus.objects.get(hostname=hostname)
+        endpoint = _scope_statuses(
+            request, EndpointStatus.objects.filter(hostname=hostname)
+        ).first()
+        if endpoint is None:
+            raise EndpointStatus.DoesNotExist
     except EndpointStatus.DoesNotExist:
         return JsonResponse(
             {"success": False, "message": f"Endpoint '{hostname}' not found"},

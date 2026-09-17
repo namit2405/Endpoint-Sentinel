@@ -327,6 +327,16 @@ class APIClient {
   async fetchLatestReports(): Promise<{ status: string; message: string }> {
     return this.request("/api/dashboard/fetch-latest/", { method: "POST" });
   }
+
+  async powerAction(
+    hostname: string,
+    action: "on" | "shutdown" | "restart",
+  ): Promise<{ success: boolean; message: string }> {
+    return this.request(
+      `/api/endpoints/${encodeURIComponent(hostname)}/power/${action}/`,
+      { method: "POST" },
+    );
+  }
 }
 
 export const apiClient = new APIClient(API_BASE_URL);

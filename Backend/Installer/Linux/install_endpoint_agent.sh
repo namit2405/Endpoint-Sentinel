@@ -682,6 +682,37 @@ if [ -n "$LICENSE_KEY" ]; then
     fi
 fi
 
+# =============================================================================
+# Fetch and execute pending power commands
+# =============================================================================
+
+COMMANDS_JSON="$($PYTHON_BIN "$SUPABASE_HELPER" poll_commands --mac "$MAC_VAL" 2>/dev/null || echo '[]')"
+echo "$COMMANDS_JSON" | "$PYTHON_BIN" -c 'import json, sys; [print("{}\t{}".format(c["id"], c["command"])) for c in json.load(sys.stdin)]' |
+while IFS=$'\t' read -r COMMAND_ID COMMAND_TYPE; do
+    [ -n "$COMMAND_ID" ] || continue
+    case "$COMMAND_TYPE" in
+        restart)
+            if sudo -n -v 2>/dev/null; then
+                "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status success --message "Restart initiated" >/dev/null 2>&1
+                sudo -n reboot
+            else
+                "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status failed --message "Restart failed" >/dev/null 2>&1
+            fi
+            ;;
+        shutdown)
+            if sudo -n -v 2>/dev/null; then
+                "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status success --message "Shutdown initiated" >/dev/null 2>&1
+                sudo -n shutdown -h now
+            else
+                "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status failed --message "Shutdown failed" >/dev/null 2>&1
+            fi
+            ;;
+        *)
+            "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status failed --message "Unsupported command: $COMMAND_TYPE" >/dev/null 2>&1
+            ;;
+    esac
+done
+
 exit 0
 HEARTBEAT_AGENT_EOF
 

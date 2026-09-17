@@ -7,6 +7,7 @@ import LiveMonitoring from "@/pages/LiveMonitoring";
 import LiveStatusPage from "@/pages/LiveStatusPage";
 import OverviewPage from "@/pages/OverviewPage";
 import SearchPage from "@/pages/SearchPage";
+import PowerManagementPage from "@/pages/PowerManagementPage";
 import SignInPage from "@/pages/SignInPage";
 import {
   Navigate,
@@ -42,6 +43,10 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   "/search": {
     title: "Global Search",
     subtitle: "Search across hostname, IP, MAC, and risk",
+  },
+  "/power": {
+    title: "Power Management",
+    subtitle: "Wake, restart, or shut down managed endpoints",
   },
 };
 
@@ -149,6 +154,12 @@ const searchRoute = createRoute({
   component: SearchPage,
 });
 
+const powerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/power",
+  component: PowerManagementPage,
+});
+
 const routeTree = rootRoute.addChildren([
   signinRoute,
   overviewRoute,
@@ -158,6 +169,7 @@ const routeTree = rootRoute.addChildren([
   endpointDetailRoute,
   compareRoute,
   searchRoute,
+  powerRoute,
 ]);
 
 const router = createRouter({ routeTree });

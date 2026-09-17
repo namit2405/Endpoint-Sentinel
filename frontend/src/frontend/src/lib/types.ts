@@ -61,6 +61,7 @@ export interface EndpointStatus {
   uptime_seconds: number | null;
   health_score: number;
   health_status: HealthStatus;
+  wol_enabled: boolean | null;
   firewall_active: boolean;
   antivirus_active: boolean;
   last_seen: number;

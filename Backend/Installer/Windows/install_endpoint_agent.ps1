@@ -641,6 +641,27 @@ if ($env:LICENSE_KEY) {
     }
 }
 
+# =============================================================================
+# Fetch and execute pending power commands
+# =============================================================================
+
+try {
+    $PendingCommands = & $PythonPath $SupabaseHelper poll_commands --mac $MacVal 2>$null | ConvertFrom-Json
+    foreach ($Command in @($PendingCommands)) {
+        if ($Command.command -eq "restart") {
+            & $PythonPath $SupabaseHelper complete_command --id $Command.id --status success --message "Restart initiated" 2>$null
+            Restart-Computer -Force
+        } elseif ($Command.command -eq "shutdown") {
+            & $PythonPath $SupabaseHelper complete_command --id $Command.id --status success --message "Shutdown initiated" 2>$null
+            Stop-Computer -Force
+        } else {
+            & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed --message "Unsupported command: $($Command.command)" 2>$null
+        }
+    }
+} catch {
+    Write-Host "Power command polling failed: $($_.Exception.Message)"
+}
+
 exit 0
 '@
 
