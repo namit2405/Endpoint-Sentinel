@@ -196,8 +196,11 @@ function ControlToggle({
 }: {
   label: string;
   description: string;
-  enabled: boolean;
+  enabled: boolean | null;
 }) {
+  const isUnknown = enabled === null;
+  const isEnabled = enabled === true;
+
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 p-3">
       <div className="min-w-0">
@@ -209,18 +212,20 @@ function ControlToggle({
           <TooltipTrigger asChild>
             <span className="inline-flex">
               <Switch
-                checked={enabled}
+                checked={isEnabled}
                 disabled
-                aria-label={`${label} ${enabled ? "enabled" : "disabled"}`}
+                aria-label={`${label} ${isUnknown ? "unknown" : isEnabled ? "enabled" : "disabled"}`}
                 className={
-                  enabled
+                  isEnabled
                     ? "border-border/80 disabled:opacity-100 data-[state=checked]:bg-success"
-                    : "border-border/80 disabled:opacity-100 data-[state=unchecked]:bg-destructive/45 data-[state=checked]:bg-destructive"
+                    : isUnknown
+                      ? "border-border/80 disabled:opacity-100 data-[state=unchecked]:bg-muted"
+                      : "border-border/80 disabled:opacity-100 data-[state=unchecked]:bg-destructive/45 data-[state=checked]:bg-destructive"
                 }
               />
             </span>
           </TooltipTrigger>
-          <TooltipContent>{enabled ? "Enabled" : "Disabled"}</TooltipContent>
+          <TooltipContent>{isUnknown ? "Unknown" : isEnabled ? "Enabled" : "Disabled"}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     </div>

@@ -133,7 +133,7 @@ def parse(filepath: str | Path) -> dict:
     hostname   = _label_value(soup, "Hostname") or _label_value(soup, "Host") or filepath.stem
     os_name    = _label_value(soup, "OS") or ""
     cpu        = _label_value(soup, "CPU") or ""
-    ram        = _label_value(soup, "Memory") or ""
+    ram        = _label_value(soup, "Memory") or _label_value(soup, "RAM") or ""
     # IP address — now present in the new System Information table
     ip_address = _label_value(soup, "IP Address") or ""
 
@@ -199,10 +199,10 @@ def parse(filepath: str | Path) -> dict:
     sc_result, sc_av = _scorecard(soup, "Antivirus")
     if sc_result:
         if "no third-party" in sc_av or "not detected" in sc_av:
-            antivirus_installed = False
+            antivirus_installed = None
         elif sc_result == "pass":
             antivirus_installed = True
-        else:
+        elif sc_result == "fail":
             antivirus_installed = False
     else:
         av_match = re.search(
@@ -242,18 +242,30 @@ def parse(filepath: str | Path) -> dict:
     tpm_present         = None
     sc_result, sc_sb = _scorecard(soup, "Secure Boot")
     if sc_result:
-        if "no t2 chip" in sc_sb or "not available" in sc_sb or sc_result == "info":
+        if "full security" in sc_sb or "enabled" in sc_sb:
+            secure_boot_enabled = True
+        elif "reduced security" in sc_sb or "no security" in sc_sb or "disabled" in sc_sb:
             secure_boot_enabled = False
-            tpm_present = False
+        elif "no t2 chip" in sc_sb or "not available" in sc_sb or sc_result == "info":
+            secure_boot_enabled = None
+            tpm_present = None
         elif sc_result == "pass":
             secure_boot_enabled = True
     else:
         sb_text = _section_text(soup, "Secure Boot")
         if "no t2 chip" in sb_text.lower() or "not available" in sb_text.lower():
-            secure_boot_enabled = False
-            tpm_present = False
+            secure_boot_enabled = None
+            tpm_present = None
         elif "full security" in sb_text.lower() or "enabled" in sb_text.lower():
             secure_boot_enabled = True
+
+    sc_result, sc_tpm = _scorecard(soup, "TPM")
+    if sc_result == "pass":
+        tpm_present = True
+    elif sc_result == "fail":
+        tpm_present = False
+    elif sc_result == "info":
+        tpm_present = None
 
     # ── SSH ───────────────────────────────────────────────────────────────
     ssh_enabled = None
@@ -268,6 +280,10 @@ def parse(filepath: str | Path) -> dict:
         ssh_match = re.search(r"Remote Login[:\s]*(Remote Login:\s*)?(On|Off)", page_text, re.IGNORECASE)
         if ssh_match:
             ssh_enabled = "on" in ssh_match.group(0).lower().split("login")[-1]
+        else:
+            ssh_match = re.search(r"SSH:\s*(.*?)(?:Remote access:|$)", page_text, re.IGNORECASE | re.DOTALL)
+            if ssh_match:
+                ssh_enabled = "not active" not in ssh_match.group(1).lower()
 
     # ── Remote access detection ───────────────────────────────────────────
     anydesk_running       = False
@@ -300,13 +316,24 @@ def parse(filepath: str | Path) -> dict:
         usb_storage_enabled = None   # informational only on macOS
 
     # ── Passwordless sudo / admin ─────────────────────────────────────────
-    passwordless_sudo = False
+    passwordless_sudo = None
     pls_text = _section_text(soup, "Passwordless Sudo")
     if pls_text:
         passwordless_sudo = (
             "no passwordless" not in pls_text.lower()
             and "none found" not in pls_text.lower()
         )
+    else:
+        sc_result, sc_sudo = _scorecard(soup, "Passwordless Sudo")
+        if sc_result:
+            passwordless_sudo = sc_result != "pass"
+
+    auditd_enabled = None
+    sc_result, sc_auditd = _scorecard(soup, "Auditd")
+    if sc_result == "pass":
+        auditd_enabled = True
+    elif sc_result == "fail":
+        auditd_enabled = False
 
     # ── Password policy ───────────────────────────────────────────────────
     pass_min_len = None
@@ -427,7 +454,7 @@ def parse(filepath: str | Path) -> dict:
         "secure_boot_enabled":   secure_boot_enabled,
         "tpm_present":           tpm_present,
         "ssh_enabled":           ssh_enabled,
-        "auditd_enabled":        None,
+        "auditd_enabled":        auditd_enabled,
         "passwordless_sudo":     passwordless_sudo,
         "sip_enabled":           sip_enabled,
         "gatekeeper_enabled":    gatekeeper_enabled,

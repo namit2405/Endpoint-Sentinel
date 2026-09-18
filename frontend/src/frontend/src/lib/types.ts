@@ -7,14 +7,14 @@ export type RiskLevel = "low" | "medium" | "high";
 export type ConnectionStatus = "online" | "warning" | "offline";
 
 export interface SecurityControls {
-  firewall: boolean;
-  encryption: boolean;
-  antivirus: boolean;
-  secureBoot: boolean;
-  tpm: boolean;
-  ssh: boolean;
-  auditd: boolean;
-  passwordlessSudo: boolean;
+  firewall: boolean | null;
+  encryption: boolean | null;
+  antivirus: boolean | null;
+  secureBoot: boolean | null;
+  tpm: boolean | null;
+  ssh: boolean | null;
+  auditd: boolean | null;
+  passwordlessSudo: boolean | null;
 }
 
 export interface RiskFinding {

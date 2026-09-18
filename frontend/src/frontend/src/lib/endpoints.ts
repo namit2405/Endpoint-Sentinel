@@ -7,6 +7,11 @@ import type {
   QuickAlert,
 } from "./types";
 
+function controlValue(value: unknown, fallback: boolean | null = null): boolean | null {
+  if (value === true || value === false || value === null) return value;
+  return fallback;
+}
+
 /**
  * Fetch all endpoints from the backend.
  * Falls back to empty array if unable to fetch.
@@ -40,14 +45,14 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
           diskPercent: ep.audit?.disk_percent ?? ep.disk_percent ?? 0,
         },
         security: {
-          firewall: ep.audit?.firewall_enabled ?? ep.firewall_active ?? false,
-          encryption: ep.audit?.encryption_enabled ?? false,
-          antivirus: ep.audit?.antivirus_installed ?? ep.antivirus_active ?? false,
-          secureBoot: ep.audit?.secure_boot_enabled ?? false,
-          tpm: ep.audit?.tpm_present ?? false,
-          ssh: ep.audit?.ssh_enabled ?? false,
-          auditd: ep.audit?.auditd_enabled ?? false,
-          passwordlessSudo: ep.audit?.passwordless_sudo ?? false,
+          firewall: controlValue(ep.audit?.firewall_enabled, ep.firewall_active ?? null),
+          encryption: controlValue(ep.audit?.encryption_enabled),
+          antivirus: controlValue(ep.audit?.antivirus_installed, ep.antivirus_active ?? null),
+          secureBoot: controlValue(ep.audit?.secure_boot_enabled),
+          tpm: controlValue(ep.audit?.tpm_present),
+          ssh: controlValue(ep.audit?.ssh_enabled),
+          auditd: controlValue(ep.audit?.auditd_enabled),
+          passwordlessSudo: controlValue(ep.audit?.passwordless_sudo),
         },
         pendingUpdates: ep.audit?.pending_updates ?? 0,
         lastPatchDate: ep.audit?.last_patch_date ?? new Date().toISOString().slice(0, 10),

@@ -9,6 +9,7 @@ Usage:
 """
 import boto3
 import re
+import tempfile
 from datetime import datetime
 from urllib.parse import quote
 from django.core.management.base import BaseCommand
@@ -118,7 +119,7 @@ class Command(BaseCommand):
                 data['memory_gb'] = value / (1024 * 1024)
 
         # Extract Pending Updates from Security Scorecard
-        updates_match = re.search(r'<tr><td>Pending OS Updates</td>.*?<td>([^<]*?(\d+)\s*update)', html_content, re.DOTALL)
+        updates_match = re.search(r'<tr><td>Pending (?:OS|macOS) Updates</td>.*?<td>([^<]*?(\d+)\s*update)', html_content, re.DOTALL | re.IGNORECASE)
         if updates_match:
             try:
                 data['pending_updates'] = int(updates_match.group(2))
@@ -132,13 +133,24 @@ class Command(BaseCommand):
 
         # Look for pass/fail indicators in the HTML
         # Firewall check - look for "Firewall" in scorecard
-        firewall_match = re.search(r'<tr><td>Firewall</td>.*?<span class="(\w+)">(\w+)</span>.*?<td>Tool: ([^<]+)', html_content, re.DOTALL)
+        firewall_match = re.search(
+            r'<tr><td>(?:Firewall|Application Firewall)</td>.*?<td>(Pass|Fail|Warn|Info)</td>.*?<td>([^<]+)',
+            html_content,
+            re.DOTALL | re.IGNORECASE,
+        )
         if firewall_match:
-            status = firewall_match.group(2).lower()
+            status = firewall_match.group(1).lower()
             if status == 'pass':
                 data['firewall_enabled'] = True
             else:
                 data['firewall_enabled'] = False
+        else:
+            # Older macOS reports put Firewall status in a plain-text
+            # Security Controls block instead of the scorecard table.
+            firewall_text = re.search(r'Firewall:\s*(.*?)(?:FileVault:|Secure Boot:|$)', html_content, re.IGNORECASE | re.DOTALL)
+            if firewall_text:
+                detail = firewall_text.group(1).lower()
+                data['firewall_enabled'] = not any(word in detail for word in ('disabled', 'state = 0', 'off'))
 
         # Antivirus check
         av_match = re.search(r'<tr><td>Antivirus / EDR</td>.*?<td>([^<]+)</td>', html_content, re.DOTALL)
@@ -187,6 +199,11 @@ class Command(BaseCommand):
                 data['encryption_enabled'] = True
             else:
                 data['encryption_enabled'] = False
+        else:
+            filevault_text = re.search(r'FileVault:\s*(.*?)(?:Secure Boot:|TPM / Secure Enclave:|$)', html_content, re.IGNORECASE | re.DOTALL)
+            if filevault_text:
+                detail = filevault_text.group(1).lower()
+                data['encryption_enabled'] = not any(word in detail for word in ('off', 'disabled', 'not encrypted'))
 
         # ─── Screen Lock ───
         screen_lock_match = re.search(r'Screen Lock.*?(?:dconf|desktop|GUI|Headless)', html_content, re.IGNORECASE | re.DOTALL)
@@ -281,10 +298,21 @@ class Command(BaseCommand):
             )
             return
 
-        # Filter HTML reports
-        html_files = [obj for obj in contents if obj['Key'].endswith('.html')]
+        # B2 keeps every overwrite as a version. Import only the newest
+        # version of each report key; older versions remain available in B2
+        # history but must not overwrite the dashboard with stale data.
+        latest_by_key = {}
+        for obj in contents:
+            key = obj['Key']
+            if not key.endswith('.html'):
+                continue
+            current = latest_by_key.get(key)
+            if current is None or obj.get('IsLatest') or obj['LastModified'] > current['LastModified']:
+                latest_by_key[key] = obj
+
+        html_files = list(latest_by_key.values())
         self.stdout.write(self.style.SUCCESS(
-            f'Found {len(html_files)} HTML report version(s) in B2'
+            f'Found {len(contents)} HTML version(s); processing {len(html_files)} latest report(s)'
         ))
 
         imported = 0
@@ -327,6 +355,35 @@ class Command(BaseCommand):
 
             # Parse security metrics from HTML
             parsed_data = self.parse_html_report(html_content)
+            if os_type == 'macos':
+                # Keep one parser contract for macOS reports. The legacy inline
+                # parser expects an older span-based HTML format and misses the
+                # current scorecard controls.
+                try:
+                    from parsers.macos_parser import parse as parse_macos_report
+
+                    with tempfile.NamedTemporaryFile(
+                        mode='w', suffix='.html', encoding='utf-8', delete=True
+                    ) as report_file:
+                        report_file.write(html_content)
+                        report_file.flush()
+                        canonical_data = parse_macos_report(report_file.name)
+                    for field in (
+                        'ip_address', 'pending_updates', 'firewall_enabled',
+                        'encryption_enabled', 'antivirus_installed',
+                        'antivirus_realtime', 'secure_boot_enabled',
+                        'tpm_present', 'ssh_enabled', 'auditd_enabled',
+                        'passwordless_sudo', 'sip_enabled', 'gatekeeper_enabled',
+                        'screen_lock_enabled', 'pass_max_days', 'pass_min_days',
+                        'pass_min_len', 'lockout_threshold',
+                    ):
+                        parsed_data[field] = canonical_data.get(field)
+                except Exception as exc:
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f'    macOS canonical parser failed; using legacy parser: {exc}'
+                        )
+                    )
             parsed_data["os_type"] = os_type
             risk_score, risk_level, _ = calculate(parsed_data)
             
@@ -345,14 +402,6 @@ class Command(BaseCommand):
                 else:
                     cpu_str = "Unknown"  # Default value instead of None
                 
-                # Reuse the pre-versioning current row for the latest version
-                # so fetching history does not leave a duplicate current row.
-                existing_current = EndpointReport.objects.filter(
-                    s3_object_key=filename
-                ).first() if obj.get('IsLatest') else None
-                if existing_current:
-                    existing_current.s3_object_key = versioned_key
-                    existing_current.save(update_fields=['s3_object_key'])
                 report, created = EndpointReport.objects.update_or_create(
                     s3_object_key=versioned_key,
                     defaults={
@@ -413,7 +462,7 @@ class Command(BaseCommand):
                 # Sync security controls from report to EndpointStatus
                 if endpoint_status:
                     endpoint_status.firewall_active = parsed_data.get('firewall_enabled')
-                    endpoint_status.antivirus_active = parsed_data.get('antivirus_realtime')
+                    endpoint_status.antivirus_active = parsed_data.get('antivirus_installed')
                     endpoint_status.save(update_fields=['firewall_active', 'antivirus_active'])
                     self.stdout.write(f'    Synced to EndpointStatus: firewall_active={endpoint_status.firewall_active}')
             except Exception as e:
