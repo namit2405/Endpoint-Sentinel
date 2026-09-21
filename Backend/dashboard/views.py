@@ -18,19 +18,14 @@ import json
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods
-from rest_framework.authentication import TokenAuthentication
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import IsAuthenticated
 
-from .models import EndpointDevice, EndpointReport, EndpointStatus, EndpointCommand, PowerActionLog
-from .api_views import _scope_reports, _scope_statuses
-from .risk import calculate, DEDUCTIONS
-from .health import calculate_health_score
-from .services.power import send_wol
+from .models import EndpointDevice, EndpointStatus, EndpointCommand, PowerActionLog
+from .services.power import normalize_mac, send_wol
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -78,6 +73,10 @@ def heartbeat(request):
     except (json.JSONDecodeError, ValueError):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
+    # Accept the legacy field name while all agents migrate to `os`.
+    if "os" not in data and data.get("os_type"):
+        data["os"] = data["os_type"]
+
     required = ("hostname", "os", "username", "agent_version")
     missing = [f for f in required if not data.get(f)]
     if missing:
@@ -90,51 +89,51 @@ def heartbeat(request):
     if not ip_address or ip_address == '0.0.0.0':
         return JsonResponse({"error": "Could not determine endpoint IP address"}, status=400)
 
-    heartbeat_time = now()
-    previous_last_seen = EndpointStatus.objects.filter(
-        hostname=data["hostname"]
-    ).values_list("last_seen", flat=True).first()
-    defaults = {
-        "os": data["os"],
-        "ip_address": ip_address,
-        "username": data["username"],
-        "agent_version": data["agent_version"],
-        "last_seen": heartbeat_time,
-    }
-
+    mac_address = None
     if data.get("mac_address"):
+        try:
+            mac_address = normalize_mac(data["mac_address"])
+        except ValueError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+
+    endpoint_device = None
+    if mac_address:
         endpoint_device, _ = EndpointDevice.objects.update_or_create(
-            mac_address=data["mac_address"],
+            mac_address=mac_address,
             defaults={
                 "hostname": data["hostname"],
                 "os": data["os"],
                 "ip_address": ip_address,
             },
         )
+
+    defaults = {
+        "hostname": data["hostname"],
+        "os": data["os"],
+        "ip_address": ip_address,
+        "username": data["username"],
+        "agent_version": data["agent_version"],
+        "last_seen": now(),
+    }
+
+    if endpoint_device:
         defaults["endpoint_device"] = endpoint_device
 
-    if "mac_address" in data and data["mac_address"]:
-        defaults["mac_address"] = data["mac_address"]
+    if mac_address:
+        defaults["mac_address"] = mac_address
 
     if "wol_enabled" in data and data["wol_enabled"] is not None:
         defaults["wol_enabled"] = data["wol_enabled"]
 
-    endpoint, created = EndpointStatus.objects.update_or_create(
-        hostname=data["hostname"],
+    lookup = {"mac_address": mac_address} if mac_address else {"hostname": data["hostname"]}
+    EndpointStatus.objects.update_or_create(
+        **lookup,
         defaults=defaults,
     )
-    if created or not endpoint.connection_started_at or (
-        previous_last_seen and heartbeat_time - previous_last_seen > timedelta(minutes=2)
-    ):
-        endpoint.connection_started_at = heartbeat_time
-        endpoint.save(update_fields=["connection_started_at"])
 
     return JsonResponse({"status": "ok"})
 
 
-@api_view(["GET"])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
 def endpoints_status(request):
     """
     GET /api/endpoints/status/
@@ -143,22 +142,8 @@ def endpoints_status(request):
     """
     _now = now()
 
-    scoped_statuses = list(
-        _scope_statuses(request, EndpointStatus.objects.all())
-        .select_related("endpoint_device")
-        .order_by("hostname")
-    )
-    scoped_reports = _scope_reports(request, EndpointReport.objects.all()).order_by("-report_date")
-    reports_by_device = {}
-    reports_by_mac = {}
-    for report in scoped_reports:
-        if report.endpoint_device_id:
-            reports_by_device.setdefault(report.endpoint_device_id, []).append(report)
-        if report.mac_address:
-            reports_by_mac.setdefault(report.mac_address, []).append(report)
-
     rows = []
-    for ep in scoped_statuses:
+    for ep in EndpointStatus.objects.all().order_by("hostname"):
         delta = _now - ep.last_seen
         secs = int(delta.total_seconds())
 
@@ -169,29 +154,12 @@ def endpoints_status(request):
         else:
             status = "offline"
 
-        # Backfill session start for endpoints installed before uptime tracking.
-        if not ep.connection_started_at and status != "offline":
-            ep.connection_started_at = ep.last_seen
-            ep.save(update_fields=["connection_started_at"])
-
         if secs < 60:
             last_seen_str = f"{secs} sec ago"
         elif secs < 3600:
             last_seen_str = f"{secs // 60} min ago"
         else:
             last_seen_str = f"{secs // 3600} hr ago"
-
-        health_score, health_status = calculate_health_score(
-            ep.cpu_percent,
-            ep.memory_percent,
-            ep.disk_percent,
-            ep.firewall_active,
-            ep.antivirus_active,
-        )
-        if status == "offline":
-            health_score, health_status = 0, "critical"
-        elif status == "warning":
-            health_score, health_status = min(health_score, 50), "warning"
 
         rows.append({
             "hostname": ep.hostname,
@@ -203,76 +171,29 @@ def endpoints_status(request):
             "agent_version": ep.agent_version,
             "last_seen": ep.last_seen.isoformat(),
             "last_seen_display": last_seen_str,
-            "connection_uptime": max(
-                0,
-                int((_now - ep.connection_started_at).total_seconds() * 1000),
-            ) if ep.connection_started_at and status != "offline" else 0,
-            "health_score": health_score,
-            "health_status": health_status,
-            "wol_enabled": ep.wol_enabled,
+            "health_score": ep.health_score or 0,
+            "health_status": ep.health_status or "healthy",
             "cpu_percent": ep.cpu_percent,
             "memory_percent": ep.memory_percent,
             "disk_percent": ep.disk_percent,
-            "uptime_seconds": ep.uptime_seconds,
             "process_count": ep.process_count,
             "firewall_active": ep.firewall_active,
             "antivirus_active": ep.antivirus_active,
         })
 
-        endpoint_reports = (
-            reports_by_device.get(ep.endpoint_device_id, [])
-            if ep.endpoint_device_id
-            else reports_by_mac.get(ep.mac_address, [])
-        )
-        latest_report = endpoint_reports[0] if endpoint_reports else None
+        latest_report = EndpointReport.objects.filter(
+            endpoint_device=ep.endpoint_device
+        ).order_by("-report_date").first() if ep.endpoint_device_id else EndpointReport.objects.filter(
+            mac_address=ep.mac_address
+        ).order_by("-report_date").first()
         if latest_report:
-            risk_data = {
-                field: getattr(latest_report, field)
-                for field in (
-                    "firewall_enabled", "antivirus_installed", "antivirus_tamper",
-                    "encryption_enabled", "secure_boot_enabled", "tpm_present",
-                    "ssh_enabled", "auditd_enabled", "passwordless_sudo", "sip_enabled",
-                    "gatekeeper_enabled", "anydesk_running", "teamviewer_running",
-                    "chrome_remote_desktop", "rdp_open", "usb_storage_enabled",
-                    "screen_lock_enabled", "pending_updates", "pass_max_days",
-                    "lockout_threshold",
-                )
-            }
-            risk_data["os_type"] = latest_report.os_type
-            _, _, deduction_keys = calculate(risk_data)
-            finding_labels = {
-                "firewall_off": "Firewall disabled",
-                "antivirus_missing": "Antivirus not installed",
-                "tamper_protection_off": "Tamper protection disabled",
-                "encryption_off": "Disk encryption disabled",
-                "secure_boot_off": "Secure Boot disabled",
-                "tpm_missing": "TPM not present",
-                "ssh_enabled": "SSH service running",
-                "auditd_missing": "Audit daemon not installed",
-                "passwordless_sudo": "Passwordless sudo allowed",
-                "sip_disabled": "SIP disabled",
-                "gatekeeper_disabled": "Gatekeeper disabled",
-                "anydesk_running": "AnyDesk running",
-                "teamviewer_running": "TeamViewer running",
-                "chrome_remote_desktop": "Chrome Remote Desktop running",
-                "rdp_open": "RDP port open",
-                "usb_storage_enabled": "USB storage unrestricted",
-                "screen_lock_missing": "Screen lock not configured",
-                "updates_6_20": "6-20 pending updates",
-                "updates_20_plus": "More than 20 pending updates",
-                "pass_never_expires": "Password never expires",
-                "no_lockout": "No account lockout threshold",
-            }
             rows[-1]["audit"] = {
-                "report_id": latest_report.id,
                 "cpu": latest_report.cpu,
                 "cpu_model": latest_report.cpu_model,
                 "ram": latest_report.ram,
                 "architecture": latest_report.architecture,
                 "disk_percent": latest_report.raw_data.get("disk_usage_percent") if latest_report.raw_data else None,
                 "report_date": latest_report.report_date.isoformat(),
-                "pending_updates": latest_report.pending_updates,
-                "last_patch_date": latest_report.last_patch_date.isoformat() if latest_report.last_patch_date else None,
                 "risk_score": latest_report.risk_score,
                 "risk_level": latest_report.risk_level,
                 "firewall_enabled": latest_report.firewall_enabled,
@@ -284,28 +205,6 @@ def endpoints_status(request):
                 "ssh_enabled": latest_report.ssh_enabled,
                 "auditd_enabled": latest_report.auditd_enabled,
                 "passwordless_sudo": latest_report.passwordless_sudo,
-                "findings": [
-                    {
-                        "key": key,
-                        "title": finding_labels.get(key, key.replace("_", " ").title()),
-                        "impact": DEDUCTIONS[key],
-                        "severity": (
-                            "critical" if DEDUCTIONS[key] >= 15
-                            else "high" if DEDUCTIONS[key] >= 10
-                            else "medium"
-                        ),
-                        "description": "Detected by the latest audit report.",
-                    }
-                    for key in deduction_keys
-                ],
-                "history": [
-                    {
-                        "report_id": related.id,
-                        "report_date": related.report_date.isoformat(),
-                        "s3_object_key": related.s3_object_key,
-                    }
-                    for related in endpoint_reports[:3]
-                ],
             }
 
     return JsonResponse({"endpoints": rows})
@@ -414,20 +313,15 @@ def agent_report_command_result(request, command_id):
 
 # ── Power Management API ─────────────────────────────────────────────────────
 
-@api_view(["POST"])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
+@login_required
+@require_POST
 def power_on_wol(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/on/
     Trigger Wake-on-LAN for an offline endpoint.
     """
     try:
-        endpoint = _scope_statuses(
-            request, EndpointStatus.objects.filter(hostname=hostname)
-        ).first()
-        if endpoint is None:
-            raise EndpointStatus.DoesNotExist
+        endpoint = EndpointStatus.objects.get(hostname=hostname)
     except EndpointStatus.DoesNotExist:
         return JsonResponse(
             {"success": False, "message": f"Endpoint '{hostname}' not found"},
@@ -495,20 +389,15 @@ def power_on_wol(request, hostname):
         }, status=500)
 
 
-@api_view(["POST"])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
+@login_required
+@require_POST
 def power_shutdown(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/shutdown/
     Queue a shutdown command for the endpoint.
     """
     try:
-        endpoint = _scope_statuses(
-            request, EndpointStatus.objects.filter(hostname=hostname)
-        ).first()
-        if endpoint is None:
-            raise EndpointStatus.DoesNotExist
+        endpoint = EndpointStatus.objects.get(hostname=hostname)
     except EndpointStatus.DoesNotExist:
         return JsonResponse(
             {"success": False, "message": f"Endpoint '{hostname}' not found"},
@@ -552,20 +441,15 @@ def power_shutdown(request, hostname):
     })
 
 
-@api_view(["POST"])
-@authentication_classes([TokenAuthentication])
-@permission_classes([IsAuthenticated])
+@login_required
+@require_POST
 def power_restart(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/restart/
     Queue a restart command for the endpoint.
     """
     try:
-        endpoint = _scope_statuses(
-            request, EndpointStatus.objects.filter(hostname=hostname)
-        ).first()
-        if endpoint is None:
-            raise EndpointStatus.DoesNotExist
+        endpoint = EndpointStatus.objects.get(hostname=hostname)
     except EndpointStatus.DoesNotExist:
         return JsonResponse(
             {"success": False, "message": f"Endpoint '{hostname}' not found"},

@@ -59,6 +59,8 @@ urlpatterns = [
 
     # ── Agent APIs ─────────────────────────────────────────────────────────
     path("api/heartbeat/",                     views.heartbeat,                       name="api_heartbeat"),
+    path("api/agent/heartbeat",                views.heartbeat,                       name="api_agent_heartbeat_compat"),
+    path("api/agent/heartbeat/",               views.heartbeat,                       name="api_agent_heartbeat_compat_slash"),
     path("api/endpoints/status/",              views.endpoints_status,                name="api_endpoints_status"),
     path("api/agent/commands/<str:hostname>/", views.agent_fetch_commands,            name="api_agent_fetch_commands"),
     path("api/agent/commands/<int:command_id>/result/", views.agent_report_command_result, name="api_agent_report_result"),

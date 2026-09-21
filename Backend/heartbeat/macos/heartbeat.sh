@@ -6,8 +6,8 @@
 # Phase 3: Collects MAC, reports WoL, polls for commands
 # =============================================================================
 
-SERVER="http://192.168.8.10:8000/api/heartbeat/"
-API_KEY="a3f9c2e1b8d7"
+SERVER="${LOCAL_BASE_URL:-http://192.168.8.10:8000}/api/heartbeat/"
+API_KEY="${HEARTBEAT_API_KEY:?HEARTBEAT_API_KEY is not set}"
 AGENT_VERSION="1.1"
 COMMAND_SERVER="http://192.168.8.10:8000/api/agent/commands"
 

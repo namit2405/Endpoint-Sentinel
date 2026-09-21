@@ -8,8 +8,10 @@
 # =============================================================================
 
 # ── Configuration (edit these two lines) ─────────────────────────────────────
-$Server  = "http://192.168.8.10:8000/api/heartbeat/"
-$ApiKey  = "a3f9c2e1b8d7"
+$Server  = "${env:LOCAL_BASE_URL}/api/heartbeat/"
+if (-not $env:LOCAL_BASE_URL) { $Server = "http://192.168.8.10:8000/api/heartbeat/" }
+$ApiKey  = $env:HEARTBEAT_API_KEY
+if (-not $ApiKey) { throw "HEARTBEAT_API_KEY is not set" }
 # ─────────────────────────────────────────────────────────────────────────────
 
 $AgentVersion = "1.1"

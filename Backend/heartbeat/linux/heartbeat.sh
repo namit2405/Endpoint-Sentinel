@@ -21,7 +21,7 @@ AGENT_VERSION="1.2"
 
 # LOCAL dashboard server
 LOCAL_BASE_URL="${LOCAL_BASE_URL:-http://192.168.8.10:8000}"
-LOCAL_HEARTBEAT_URL="${LOCAL_BASE_URL}/api/agent/heartbeat"
+LOCAL_HEARTBEAT_URL="${LOCAL_BASE_URL}/api/heartbeat/"
 LOCAL_COMMAND_URL="${LOCAL_BASE_URL}/api/agent/commands"
 
 # Authentication
@@ -72,7 +72,7 @@ import json, sys
 hostname, os_name, ip, username, agent_version, mac, wol_enabled = sys.argv[1:]
 data = {
     "hostname": hostname,
-    "os_type": os_name,
+    "os": os_name,
     "ip_address": ip,
     "username": username,
     "agent_version": agent_version,

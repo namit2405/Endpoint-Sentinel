@@ -15,7 +15,7 @@ from django.contrib.auth.models import User
 from django.utils.timezone import now
 from datetime import timedelta
 
-from .models import EndpointStatus, EndpointCommand, PowerActionLog
+from .models import EndpointDevice, EndpointStatus, EndpointCommand, PowerActionLog
 from .services.power import normalize_mac
 
 
@@ -183,6 +183,53 @@ class BackwardCompatibilityTests(TestCase):
         ep = EndpointStatus.objects.get(hostname="NEWPC")
         self.assertEqual(ep.mac_address, "AA:BB:CC:DD:EE:FF")
         self.assertTrue(ep.wol_enabled)
+
+        device = EndpointDevice.objects.get(mac_address="AA:BB:CC:DD:EE:FF")
+        self.assertEqual(ep.endpoint_device_id, device.id)
+
+    def test_heartbeat_normalizes_mac_and_uses_mac_identity(self):
+        payload = {
+            "hostname": "MACPC",
+            "os": "Linux",
+            "ip_address": "192.168.1.71",
+            "username": "user",
+            "agent_version": "1.1",
+            "mac_address": "aa-bb-cc-dd-ee-11",
+        }
+        response = self.client.post(
+            "/api/heartbeat/",
+            data=json.dumps(payload),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {settings.HEARTBEAT_API_KEY}",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(EndpointDevice.objects.count(), 1)
+        device = EndpointDevice.objects.get()
+        self.assertEqual(device.mac_address, "AA:BB:CC:DD:EE:11")
+        status = EndpointStatus.objects.get()
+        self.assertEqual(status.mac_address, device.mac_address)
+        self.assertEqual(status.endpoint_device_id, device.id)
+
+    def test_legacy_agent_heartbeat_alias_creates_device(self):
+        response = self.client.post(
+            "/api/agent/heartbeat",
+            data=json.dumps({
+                "hostname": "LEGACYPC",
+                "os_type": "Linux",
+                "ip_address": "192.168.1.72",
+                "username": "user",
+                "agent_version": "1.0",
+                "mac_address": "AABBCCDDEEFF",
+            }),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {settings.HEARTBEAT_API_KEY}",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(EndpointDevice.objects.filter(
+            mac_address="AA:BB:CC:DD:EE:FF",
+        ).exists())
 
 
 # ── Presence-based Command Queueing Tests ────────────────────────────────
