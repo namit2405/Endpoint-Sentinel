@@ -1,0 +1,17 @@
+services:
+  endpoint-sentinel:
+    image: ghcr.io/namit2405/endpoint-sentinel:latest
+    container_name: endpoint-sentinel
+    restart: unless-stopped
+    env_file:
+      - /opt/endpoint-sentinel/.env
+    ports:
+      - "8001:8001"
+      - "5174:5174"
+    volumes:
+      - endpoint_reports:/app/Backend/Reports
+      - endpoint_static:/app/Backend/staticfiles
+
+volumes:
+  endpoint_reports:
+  endpoint_static:
