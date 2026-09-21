@@ -239,7 +239,7 @@ def endpoints_status(request):
                     Q(endpoint_device=ep.endpoint_device)
                     if ep.endpoint_device_id
                     else Q(mac_address=ep.mac_address)
-                ).order_by("-report_date")[:20]
+                ).order_by("-report_date")[:3]
             ]
             rows[-1]["audit"] = {
                 "report_id": latest_report.id,
