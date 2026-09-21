@@ -95,12 +95,18 @@ export function getDashboardSummary(
   endpoints: EndpointStatus[],
 ): DashboardSummary {
   try {
+    const cutoff = Date.now();
     const online = endpoints.filter(
-      (e) => e.health_status !== "critical" && e.last_seen > Date.now() - 120000, // 2 minutes
+      (e) => cutoff - e.last_seen <= 60_000,
     ).length;
-    const warning = endpoints.filter((e) => e.health_status === "warning").length;
+    const warning = endpoints.filter(
+      (e) => {
+        const age = cutoff - e.last_seen;
+        return age > 60_000 && age <= 120_000;
+      },
+    ).length;
     const offline = endpoints.filter(
-      (e) => e.health_status === "critical",
+      (e) => cutoff - e.last_seen > 120_000,
     ).length;
     const healthy = endpoints.filter((e) => e.health_status === "healthy").length;
     const atRisk = endpoints.filter((e) => e.audit.riskLevel !== "low").length;

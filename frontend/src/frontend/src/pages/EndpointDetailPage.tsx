@@ -369,7 +369,7 @@ export default function EndpointDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid items-start gap-6 lg:grid-cols-2">
         {/* Hardware */}
         <SectionCard
           icon={<Cpu className="size-4" aria-hidden="true" />}
