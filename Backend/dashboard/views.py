@@ -19,6 +19,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.http import JsonResponse
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
@@ -29,6 +30,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from .models import EndpointDevice, EndpointReport, EndpointStatus, EndpointCommand, PowerActionLog
 from .api_views import _scope_reports, _scope_statuses
+from .risk import calculate, DEDUCTIONS
 from .services.power import normalize_mac, send_wol
 
 
@@ -198,13 +200,58 @@ def endpoints_status(request):
             mac_address=ep.mac_address
         ).order_by("-report_date").first()
         if latest_report:
+            report_data = {
+                field: getattr(latest_report, field)
+                for field in (
+                    "firewall_enabled", "antivirus_installed", "antivirus_tamper",
+                    "encryption_enabled", "secure_boot_enabled", "tpm_present",
+                    "ssh_enabled", "auditd_enabled", "passwordless_sudo",
+                    "sip_enabled", "gatekeeper_enabled", "anydesk_running",
+                    "teamviewer_running", "chrome_remote_desktop", "rdp_open",
+                    "usb_storage_enabled", "screen_lock_enabled", "pending_updates",
+                    "pass_max_days", "lockout_threshold",
+                )
+            }
+            report_data["os_type"] = latest_report.os_type
+            _, _, finding_keys = calculate(report_data)
+            finding_labels = {
+                "firewall_off": "Firewall disabled",
+                "antivirus_missing": "Antivirus not installed",
+                "tamper_protection_off": "Tamper protection disabled",
+                "encryption_off": "Disk encryption disabled",
+                "secure_boot_off": "Secure Boot disabled",
+                "tpm_missing": "TPM not present",
+                "ssh_enabled": "SSH service running",
+                "auditd_missing": "Audit daemon not installed",
+                "passwordless_sudo": "Passwordless sudo allowed",
+                "sip_disabled": "SIP disabled",
+                "gatekeeper_disabled": "Gatekeeper disabled",
+                "updates_6_20": "6-20 pending updates",
+                "updates_20_plus": "More than 20 pending updates",
+            }
+            history = [
+                {
+                    "report_id": report.id,
+                    "report_date": report.report_date.isoformat(),
+                    "s3_object_key": report.s3_object_key,
+                }
+                for report in reports.filter(
+                    Q(endpoint_device=ep.endpoint_device)
+                    if ep.endpoint_device_id
+                    else Q(mac_address=ep.mac_address)
+                ).order_by("-report_date")[:20]
+            ]
             rows[-1]["audit"] = {
+                "report_id": latest_report.id,
                 "cpu": latest_report.cpu,
                 "cpu_model": latest_report.cpu_model,
                 "ram": latest_report.ram,
                 "architecture": latest_report.architecture,
                 "disk_percent": latest_report.raw_data.get("disk_usage_percent") if latest_report.raw_data else None,
                 "report_date": latest_report.report_date.isoformat(),
+                "pending_updates": latest_report.pending_updates,
+                "last_patch_date": latest_report.last_patch_date.isoformat() if latest_report.last_patch_date else None,
+                "pass_max_days": latest_report.pass_max_days,
                 "risk_score": latest_report.risk_score,
                 "risk_level": latest_report.risk_level,
                 "firewall_enabled": latest_report.firewall_enabled,
@@ -216,6 +263,23 @@ def endpoints_status(request):
                 "ssh_enabled": latest_report.ssh_enabled,
                 "auditd_enabled": latest_report.auditd_enabled,
                 "passwordless_sudo": latest_report.passwordless_sudo,
+                "sip_enabled": latest_report.sip_enabled,
+                "gatekeeper_enabled": latest_report.gatekeeper_enabled,
+                "anydesk_running": latest_report.anydesk_running,
+                "teamviewer_running": latest_report.teamviewer_running,
+                "chrome_remote_desktop": latest_report.chrome_remote_desktop,
+                "rdp_open": latest_report.rdp_open,
+                "usb_storage_enabled": latest_report.usb_storage_enabled,
+                "screen_lock_enabled": latest_report.screen_lock_enabled,
+                "risk_findings": [
+                    {
+                        "key": key,
+                        "label": finding_labels.get(key, key.replace("_", " ").title()),
+                        "points": DEDUCTIONS[key],
+                    }
+                    for key in finding_keys
+                ],
+                "history": history,
             }
 
     return JsonResponse({"endpoints": rows})
