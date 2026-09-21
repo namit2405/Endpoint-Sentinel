@@ -3,7 +3,7 @@
  * Handles all communication with the Endpoint Sentinel backend.
  */
 
-import { getStoredAccountType } from "./auth";
+import { getStoredAccountType, getStoredToken } from "./auth";
 import type {
   DashboardSummary,
   EndpointStatus,
@@ -43,6 +43,7 @@ class APIClient {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
+    this.token = getStoredToken();
     if (this.token) {
       headers["Authorization"] = `Token ${this.token}`;
     }
