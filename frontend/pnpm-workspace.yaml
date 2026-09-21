@@ -1,3 +1,6 @@
+packages:
+  - src/frontend
+
 allowBuilds:
   '@biomejs/biome': true
   '@dfinity/pic': true

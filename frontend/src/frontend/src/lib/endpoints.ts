@@ -7,11 +7,6 @@ import type {
   QuickAlert,
 } from "./types";
 
-function controlValue(value: unknown, fallback: boolean | null = null): boolean | null {
-  if (value === true || value === false || value === null) return value;
-  return fallback;
-}
-
 /**
  * Fetch all endpoints from the backend.
  * Falls back to empty array if unable to fetch.
@@ -35,7 +30,7 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
       antivirus_active: ep.antivirus_active ?? false,
       last_seen: new Date(ep.last_seen).getTime(),
       last_health_check: ep.last_health_check ? new Date(ep.last_health_check).getTime() : Date.now(),
-      connection_uptime: ep.connection_uptime ?? 0,
+      connection_uptime: 0, // Backend doesn't provide this currently
       audit: {
         hardware: {
           cpuCores: parseCpuCores(ep.audit?.cpu),
@@ -45,44 +40,25 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
           diskPercent: ep.audit?.disk_percent ?? ep.disk_percent ?? 0,
         },
         security: {
-          firewall: controlValue(ep.audit?.firewall_enabled, ep.firewall_active ?? null),
-          encryption: controlValue(ep.audit?.encryption_enabled),
-          antivirus: controlValue(ep.audit?.antivirus_installed, ep.antivirus_active ?? null),
-          secureBoot: controlValue(ep.audit?.secure_boot_enabled),
-          tpm: controlValue(ep.audit?.tpm_present),
-          ssh: controlValue(ep.audit?.ssh_enabled),
-          auditd: controlValue(ep.audit?.auditd_enabled),
-          passwordlessSudo: controlValue(ep.audit?.passwordless_sudo),
+          firewall: ep.audit?.firewall_enabled ?? ep.firewall_active ?? false,
+          encryption: ep.audit?.encryption_enabled ?? false,
+          antivirus: ep.audit?.antivirus_installed ?? ep.antivirus_active ?? false,
+          secureBoot: ep.audit?.secure_boot_enabled ?? false,
+          tpm: ep.audit?.tpm_present ?? false,
+          ssh: ep.audit?.ssh_enabled ?? false,
+          auditd: ep.audit?.auditd_enabled ?? false,
+          passwordlessSudo: ep.audit?.passwordless_sudo ?? false,
         },
-        pendingUpdates: ep.audit?.pending_updates ?? 0,
-        lastPatchDate: ep.audit?.last_patch_date ?? new Date().toISOString().slice(0, 10),
+        pendingUpdates: 0,
+        lastPatchDate: new Date().toISOString().slice(0, 10),
         passMaxDays: 90,
+        reportId: ep.audit?.report_id ?? null,
         riskScore: ep.audit?.risk_score ?? Math.round((100 - ep.health_score) * 0.8),
         riskLevel: ep.audit?.risk_level === "critical" ? "high" : ep.audit?.risk_level === "warning" ? "medium" : ep.audit?.risk_level === "high" ? "high" : ep.health_status === "critical" ? "high" : ep.health_status === "warning" ? "medium" : "low",
-        riskFindings: (ep.audit?.findings ?? []).map((finding: any) => ({
-          id: finding.key,
-          title: finding.title,
-          severity: finding.severity,
-          impact: finding.impact,
-          description: finding.description,
-        })),
+        riskFindings: [],
         reportDate: ep.audit?.report_date ?? new Date().toISOString().slice(0, 10),
-        reportId: ep.audit?.report_id ?? null,
         s3ObjectKey: "",
-        history: (ep.audit?.history?.length
-          ? ep.audit.history
-          : ep.audit?.report_id
-            ? [{
-                report_id: ep.audit.report_id,
-                report_date: ep.audit.report_date,
-                s3_object_key: ep.audit.s3_object_key,
-              }]
-            : []
-        ).map((report: any) => ({
-          reportId: report.report_id,
-          reportDate: report.report_date,
-          s3ObjectKey: report.s3_object_key ?? "",
-        })),
+        history: [],
       },
     }));
   } catch (error) {
