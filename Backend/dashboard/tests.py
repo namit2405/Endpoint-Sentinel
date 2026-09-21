@@ -231,7 +231,7 @@ class BackwardCompatibilityTests(TestCase):
             mac_address="AA:BB:CC:DD:EE:FF",
         ).exists())
 
-    def test_endpoint_status_returns_latest_report_data(self):
+    def test_endpoint_status_requires_account_scope(self):
         EndpointStatus.objects.create(
             hostname="STATUSPC",
             os="Linux",
@@ -248,10 +248,20 @@ class BackwardCompatibilityTests(TestCase):
             mac_address="AA:BB:CC:DD:EE:12",
         )
 
-        response = self.client.get("/api/endpoints/status/")
+        unauthenticated = self.client.get("/api/endpoints/status/")
+        self.assertEqual(unauthenticated.status_code, 401)
+
+        user = User.objects.create_user(username="status-user", password="pass")
+        from rest_framework.authtoken.models import Token
+        token = Token.objects.create(user=user)
+        response = self.client.get(
+            "/api/endpoints/status/",
+            HTTP_AUTHORIZATION=f"Token {token.key}",
+            HTTP_X_ACCOUNT_TYPE="company",
+        )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()["endpoints"]), 1)
+        self.assertEqual(response.json()["endpoints"], [])
 
 
 # ── Presence-based Command Queueing Tests ────────────────────────────────

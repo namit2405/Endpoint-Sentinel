@@ -23,8 +23,12 @@ from django.http import JsonResponse
 from django.utils.timezone import now
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import IsAuthenticated
 
 from .models import EndpointDevice, EndpointReport, EndpointStatus, EndpointCommand, PowerActionLog
+from .api_views import _scope_reports, _scope_statuses
 from .services.power import normalize_mac, send_wol
 
 
@@ -134,16 +138,23 @@ def heartbeat(request):
     return JsonResponse({"status": "ok"})
 
 
+@api_view(["GET"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def endpoints_status(request):
     """
     GET /api/endpoints/status/
     Returns JSON array with status and health metrics for AJAX live-refresh.
-    No auth required — read-only, no sensitive data beyond what's already visible.
+    Returns only endpoint data owned by the authenticated account.
     """
     _now = now()
 
     rows = []
-    for ep in EndpointStatus.objects.all().order_by("hostname"):
+    statuses = _scope_statuses(request, EndpointStatus.objects.all()).select_related(
+        "endpoint_device"
+    ).order_by("hostname")
+    reports = _scope_reports(request, EndpointReport.objects.all()).order_by("-report_date")
+    for ep in statuses:
         delta = _now - ep.last_seen
         secs = int(delta.total_seconds())
 
@@ -181,9 +192,9 @@ def endpoints_status(request):
             "antivirus_active": ep.antivirus_active,
         })
 
-        latest_report = EndpointReport.objects.filter(
+        latest_report = reports.filter(
             endpoint_device=ep.endpoint_device
-        ).order_by("-report_date").first() if ep.endpoint_device_id else EndpointReport.objects.filter(
+        ).order_by("-report_date").first() if ep.endpoint_device_id else reports.filter(
             mac_address=ep.mac_address
         ).order_by("-report_date").first()
         if latest_report:
