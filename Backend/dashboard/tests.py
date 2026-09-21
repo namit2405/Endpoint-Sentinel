@@ -15,7 +15,7 @@ from django.contrib.auth.models import User
 from django.utils.timezone import now
 from datetime import timedelta
 
-from .models import EndpointDevice, EndpointStatus, EndpointCommand, PowerActionLog
+from .models import EndpointDevice, EndpointReport, EndpointStatus, EndpointCommand, PowerActionLog
 from .services.power import normalize_mac
 
 
@@ -230,6 +230,28 @@ class BackwardCompatibilityTests(TestCase):
         self.assertTrue(EndpointDevice.objects.filter(
             mac_address="AA:BB:CC:DD:EE:FF",
         ).exists())
+
+    def test_endpoint_status_returns_latest_report_data(self):
+        EndpointStatus.objects.create(
+            hostname="STATUSPC",
+            os="Linux",
+            ip_address="192.168.1.73",
+            username="user",
+            agent_version="1.1",
+            last_seen=now(),
+            mac_address="AA:BB:CC:DD:EE:12",
+        )
+        EndpointReport.objects.create(
+            hostname="STATUSPC",
+            os_type="linux",
+            report_date=now(),
+            mac_address="AA:BB:CC:DD:EE:12",
+        )
+
+        response = self.client.get("/api/endpoints/status/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["endpoints"]), 1)
 
 
 # ── Presence-based Command Queueing Tests ────────────────────────────────
