@@ -2,6 +2,57 @@
 
 from django.db import migrations, models
 import uuid
+import sqlparse
+
+
+POSTGRES_SQL = """
+ALTER TABLE dashboard_endpointcommand DROP CONSTRAINT dashboard_endpointco_endpoint_device_id_25b0c5b2_fk_dashboard;
+ALTER TABLE dashboard_endpointmetricshistory DROP CONSTRAINT dashboard_endpointme_endpoint_device_id_be3552c1_fk_dashboard;
+ALTER TABLE dashboard_endpointreport DROP CONSTRAINT dashboard_endpointre_endpoint_device_id_ac56de40_fk_dashboard;
+ALTER TABLE dashboard_endpointstatus DROP CONSTRAINT dashboard_endpointst_endpoint_device_id_7ef8339a_fk_dashboard;
+ALTER TABLE dashboard_licensedevicerecord DROP CONSTRAINT dashboard_licensedev_endpoint_device_id_84295ab7_fk_dashboard;
+ALTER TABLE dashboard_licenseusagelog DROP CONSTRAINT dashboard_licenseusa_endpoint_device_id_40391311_fk_dashboard;
+ALTER TABLE dashboard_poweractionlog DROP CONSTRAINT dashboard_poweractio_endpoint_device_id_ceceb93c_fk_dashboard;
+ALTER TABLE dashboard_endpointdevice ALTER COLUMN id DROP IDENTITY IF EXISTS;
+ALTER TABLE dashboard_endpointdevice ALTER COLUMN id TYPE uuid USING gen_random_uuid();
+ALTER TABLE dashboard_endpointcommand ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
+ALTER TABLE dashboard_endpointmetricshistory ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
+ALTER TABLE dashboard_endpointreport ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
+ALTER TABLE dashboard_endpointstatus ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
+ALTER TABLE dashboard_licensedevicerecord ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
+ALTER TABLE dashboard_licenseusagelog ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
+ALTER TABLE dashboard_poweractionlog ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
+ALTER TABLE dashboard_endpointcommand ADD CONSTRAINT dashboard_endpointco_endpoint_device_id_25b0c5b2_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE dashboard_endpointmetricshistory ADD CONSTRAINT dashboard_endpointme_endpoint_device_id_be3552c1_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE dashboard_endpointreport ADD CONSTRAINT dashboard_endpointre_endpoint_device_id_ac56de40_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE dashboard_endpointstatus ADD CONSTRAINT dashboard_endpointst_endpoint_device_id_7ef8339a_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE dashboard_licensedevicerecord ADD CONSTRAINT dashboard_licensedev_endpoint_device_id_84295ab7_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE dashboard_licenseusagelog ADD CONSTRAINT dashboard_licenseusa_endpoint_device_id_40391311_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE dashboard_poweractionlog ADD CONSTRAINT dashboard_poweractio_endpoint_device_id_ceceb93c_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
+"""
+
+
+def alter_endpoint_device_id(apps, schema_editor):
+    if schema_editor.connection.vendor == "sqlite":
+        model = apps.get_model("dashboard", "EndpointDevice")
+        old_field = model._meta.get_field("id")
+        new_field = models.UUIDField(
+            default=uuid.uuid4,
+            editable=False,
+            primary_key=True,
+            serialize=False,
+        )
+        new_field.set_attributes_from_name("id")
+        new_field.model = model
+        schema_editor.alter_field(
+            model,
+            old_field,
+            new_field,
+        )
+        return
+
+    for statement in sqlparse.split(POSTGRES_SQL):
+        schema_editor.execute(statement)
 
 
 class Migration(migrations.Migration):
@@ -13,33 +64,9 @@ class Migration(migrations.Migration):
     operations = [
         migrations.SeparateDatabaseAndState(
             database_operations=[
-                migrations.RunSQL(
-                    sql="""
-                    ALTER TABLE dashboard_endpointcommand DROP CONSTRAINT dashboard_endpointco_endpoint_device_id_25b0c5b2_fk_dashboard;
-                    ALTER TABLE dashboard_endpointmetricshistory DROP CONSTRAINT dashboard_endpointme_endpoint_device_id_be3552c1_fk_dashboard;
-                    ALTER TABLE dashboard_endpointreport DROP CONSTRAINT dashboard_endpointre_endpoint_device_id_ac56de40_fk_dashboard;
-                    ALTER TABLE dashboard_endpointstatus DROP CONSTRAINT dashboard_endpointst_endpoint_device_id_7ef8339a_fk_dashboard;
-                    ALTER TABLE dashboard_licensedevicerecord DROP CONSTRAINT dashboard_licensedev_endpoint_device_id_84295ab7_fk_dashboard;
-                    ALTER TABLE dashboard_licenseusagelog DROP CONSTRAINT dashboard_licenseusa_endpoint_device_id_40391311_fk_dashboard;
-                    ALTER TABLE dashboard_poweractionlog DROP CONSTRAINT dashboard_poweractio_endpoint_device_id_ceceb93c_fk_dashboard;
-                    ALTER TABLE dashboard_endpointdevice ALTER COLUMN id DROP IDENTITY IF EXISTS;
-                    ALTER TABLE dashboard_endpointdevice ALTER COLUMN id TYPE uuid USING gen_random_uuid();
-                    ALTER TABLE dashboard_endpointcommand ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
-                    ALTER TABLE dashboard_endpointmetricshistory ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
-                    ALTER TABLE dashboard_endpointreport ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
-                    ALTER TABLE dashboard_endpointstatus ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
-                    ALTER TABLE dashboard_licensedevicerecord ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
-                    ALTER TABLE dashboard_licenseusagelog ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
-                    ALTER TABLE dashboard_poweractionlog ALTER COLUMN endpoint_device_id TYPE uuid USING NULL::uuid;
-                    ALTER TABLE dashboard_endpointcommand ADD CONSTRAINT dashboard_endpointco_endpoint_device_id_25b0c5b2_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
-                    ALTER TABLE dashboard_endpointmetricshistory ADD CONSTRAINT dashboard_endpointme_endpoint_device_id_be3552c1_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
-                    ALTER TABLE dashboard_endpointreport ADD CONSTRAINT dashboard_endpointre_endpoint_device_id_ac56de40_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
-                    ALTER TABLE dashboard_endpointstatus ADD CONSTRAINT dashboard_endpointst_endpoint_device_id_7ef8339a_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
-                    ALTER TABLE dashboard_licensedevicerecord ADD CONSTRAINT dashboard_licensedev_endpoint_device_id_84295ab7_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
-                    ALTER TABLE dashboard_licenseusagelog ADD CONSTRAINT dashboard_licenseusa_endpoint_device_id_40391311_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
-                    ALTER TABLE dashboard_poweractionlog ADD CONSTRAINT dashboard_poweractio_endpoint_device_id_ceceb93c_fk_dashboard FOREIGN KEY (endpoint_device_id) REFERENCES dashboard_endpointdevice(id) DEFERRABLE INITIALLY DEFERRED;
-                    """,
-                    reverse_sql=migrations.RunSQL.noop,
+                migrations.RunPython(
+                    alter_endpoint_device_id,
+                    reverse_code=migrations.RunPython.noop,
                 ),
             ],
             state_operations=[
