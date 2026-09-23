@@ -812,7 +812,7 @@ export default function InventoryPage() {
       </div>
 
       {/* Table */}
-      <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-subtle">
+      <div className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-card shadow-subtle">
         {loading ? (
           <div className="space-y-3 p-4" data-ocid="inventory.loading_state">
             {["row-1", "row-2", "row-3", "row-4", "row-5", "row-6"].map((k) => (

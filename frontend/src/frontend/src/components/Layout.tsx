@@ -36,7 +36,7 @@ export function Layout({
           isRefreshing={isRefreshing}
           onRefresh={onRefresh}
         />
-        <main className="flex-1 p-4 md:p-6">
+        <main className="min-w-0 flex-1 p-4 md:p-6">
           <Outlet />
         </main>
         <footer className="border-t border-border bg-muted/40 px-4 py-4 md:px-6">
