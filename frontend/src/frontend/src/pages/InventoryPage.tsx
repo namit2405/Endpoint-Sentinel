@@ -471,10 +471,10 @@ export default function InventoryPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       {/* Toolbar: search + export */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-md">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative min-w-0 w-full sm:max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             data-ocid="inventory.search_input"
@@ -486,12 +486,13 @@ export default function InventoryPage() {
             className="pl-9"
           />
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
           <Button
             data-ocid="inventory.fetch_latest_button"
             variant="outline"
             onClick={handleFetchLatest}
             disabled={fetchingLatest}
+            className="w-full sm:w-auto"
           >
             <RefreshCw
               className={`size-4 ${fetchingLatest ? "animate-spin" : ""}`}
@@ -503,6 +504,7 @@ export default function InventoryPage() {
             variant="outline"
             onClick={handleExportPdf}
             disabled={filtered.length === 0}
+            className="w-full sm:w-auto"
           >
             <Download className="size-4" />
             Export PDF
@@ -512,6 +514,7 @@ export default function InventoryPage() {
             variant="outline"
             onClick={handleExport}
             disabled={filtered.length === 0}
+            className="w-full sm:w-auto"
           >
             <Download className="size-4" />
             Export CSV
@@ -809,7 +812,7 @@ export default function InventoryPage() {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-subtle">
+      <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-subtle">
         {loading ? (
           <div className="space-y-3 p-4" data-ocid="inventory.loading_state">
             {["row-1", "row-2", "row-3", "row-4", "row-5", "row-6"].map((k) => (
@@ -853,7 +856,7 @@ export default function InventoryPage() {
             </Button>
           </div>
         ) : (
-          <Table>
+          <Table className="min-w-[980px]">
             <TableHeader>
               <TableRow className="bg-muted/40">
                 <TableHead>Hostname</TableHead>

@@ -88,7 +88,9 @@ POST /api/endpoints/<hostname>/power/restart/   — Queue restart command
    pip install -r requirements.txt
    ```
 
-2. **Configure environment variables** (create `.env`):
+2. **Configure environment variables**. Production uses `.env`. For local development,
+   copy `.env.development.example` to `.env.development` and select it with
+   `ENDPOINT_SENTINEL_ENV_FILE=.env.development` when starting Django:
    ```
    SECRET_KEY=your-secret-key
    DEBUG=True
@@ -112,7 +114,7 @@ POST /api/endpoints/<hostname>/power/restart/   — Queue restart command
 
 5. **Run development server**:
    ```bash
-   python manage.py runserver
+   ENDPOINT_SENTINEL_ENV_FILE=.env.development python manage.py runserver 8001
    ```
 
 Backend will be available at `http://localhost:8000`

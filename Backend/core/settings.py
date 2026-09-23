@@ -5,12 +5,22 @@ Database: SQLite (local development)
 Storage: Filebase S3-compatible (audit reports)
 """
 import logging
+import os
 from pathlib import Path
-from decouple import config, Csv
+from decouple import Config, Csv, RepositoryEnv, config as default_config
 
 logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+env_file = os.getenv("ENDPOINT_SENTINEL_ENV_FILE")
+if env_file:
+    env_path = Path(env_file)
+    if not env_path.is_absolute():
+        env_path = BASE_DIR / env_path
+    config = Config(RepositoryEnv(str(env_path)))
+else:
+    config = default_config
 
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', cast=bool)

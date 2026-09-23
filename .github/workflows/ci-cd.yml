@@ -104,5 +104,6 @@ jobs:
             cd /opt/endpoint-sentinel
             echo '${{ secrets.GHCR_READ_TOKEN }}' | docker login ghcr.io -u '${{ secrets.GHCR_USERNAME }}' --password-stdin
             docker compose -f compose.production.yml pull endpoint-sentinel
-            docker compose -f compose.production.yml up -d --remove-orphans endpoint-sentinel
+            docker compose -f compose.production.yml up -d --pull always --remove-orphans endpoint-sentinel
+            docker inspect --format='{{.State.Health.Status}}' endpoint-sentinel
             docker image prune -f

@@ -46,9 +46,9 @@ describe("Endpoint Detail page", () => {
     expect(screen.getByText("Antivirus")).toBeInTheDocument();
     expect(screen.getByText("Secure Boot")).toBeInTheDocument();
     expect(screen.getByText("TPM")).toBeInTheDocument();
-    expect(screen.getByText("SSH enabled")).toBeInTheDocument();
-    expect(screen.getByText("Auditd")).toBeInTheDocument();
-    expect(screen.getByText("Passwordless sudo")).toBeInTheDocument();
+    expect(screen.queryByText("SSH enabled")).not.toBeInTheDocument();
+    expect(screen.queryByText("Auditd")).not.toBeInTheDocument();
+    expect(screen.queryByText("Passwordless sudo")).not.toBeInTheDocument();
 
     expect(
       screen.getByRole("status", { name: "Firewall disabled" }),

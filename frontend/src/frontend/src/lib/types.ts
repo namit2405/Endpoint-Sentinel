@@ -15,6 +15,8 @@ export interface SecurityControls {
   ssh: boolean | null;
   auditd: boolean | null;
   passwordlessSudo: boolean | null;
+  sip: boolean | null;
+  gatekeeper: boolean | null;
 }
 
 export interface RiskFinding {

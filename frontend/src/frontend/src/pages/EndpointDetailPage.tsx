@@ -18,6 +18,7 @@ import {
 } from "@/lib/format";
 import type {
   EndpointStatus,
+  OS,
   RiskFinding,
   SecurityControls,
 } from "@/lib/types";
@@ -62,35 +63,69 @@ interface ControlDef {
   key: keyof SecurityControls;
   label: string;
   description: string;
+  applicableOs?: OS[];
 }
 
-const CONTROLS_ROW_1: ControlDef[] = [
-  { key: "firewall", label: "Firewall", description: "Host firewall active" },
+const CONTROL_DEFS: ControlDef[] = [
+  {
+    key: "firewall",
+    label: "Firewall",
+    description: "Host firewall active",
+    applicableOs: ["Windows", "Linux", "macOS"],
+  },
   {
     key: "encryption",
     label: "Encryption",
     description: "Disk encryption enabled",
+    applicableOs: ["Windows", "Linux", "macOS"],
   },
   {
     key: "antivirus",
     label: "Antivirus",
     description: "Endpoint protection running",
+    applicableOs: ["Windows", "Linux", "macOS"],
   },
   {
     key: "secureBoot",
     label: "Secure Boot",
     description: "UEFI secure boot enforced",
+    applicableOs: ["Windows", "Linux", "macOS"],
   },
-];
-
-const CONTROLS_ROW_2: ControlDef[] = [
-  { key: "tpm", label: "TPM", description: "Trusted platform module present" },
-  { key: "ssh", label: "SSH enabled", description: "Remote shell access" },
-  { key: "auditd", label: "Auditd", description: "Audit daemon logging" },
+  {
+    key: "tpm",
+    label: "TPM",
+    description: "Trusted platform module present",
+    applicableOs: ["Windows", "Linux", "macOS"],
+  },
+  {
+    key: "ssh",
+    label: "SSH enabled",
+    description: "Remote shell access",
+    applicableOs: ["Linux", "macOS"],
+  },
+  {
+    key: "auditd",
+    label: "Auditd",
+    description: "Audit daemon logging",
+    applicableOs: ["Linux"],
+  },
   {
     key: "passwordlessSudo",
     label: "Passwordless sudo",
     description: "Sudo without password",
+    applicableOs: ["Linux", "macOS"],
+  },
+  {
+    key: "sip",
+    label: "SIP",
+    description: "System Integrity Protection",
+    applicableOs: ["macOS"],
+  },
+  {
+    key: "gatekeeper",
+    label: "Gatekeeper",
+    description: "App execution protection",
+    applicableOs: ["macOS"],
   },
 ];
 
@@ -186,17 +221,26 @@ function ControlToggle({
   label,
   description,
   enabled,
+  applicable,
 }: {
   label: string;
   description: string;
   enabled: boolean | null;
+  applicable: boolean;
 }) {
-  const isUnknown = enabled === null;
+  const isNotApplicable = !applicable;
+  const isUnknown = enabled === null && !isNotApplicable;
   const isEnabled = enabled === true;
-  const statusLabel = isUnknown ? "Unknown" : isEnabled ? "Enabled" : "Disabled";
+  const statusLabel = isNotApplicable
+    ? "N/A"
+    : isUnknown
+      ? "Unknown"
+      : isEnabled
+        ? "Enabled"
+        : "Disabled";
   const statusClass = isEnabled
     ? "bg-success/15 text-success"
-    : isUnknown
+    : isUnknown || isNotApplicable
       ? "bg-muted text-muted-foreground"
       : "bg-destructive/15 text-destructive";
 
@@ -424,22 +468,15 @@ export default function EndpointDetailPage() {
         data-ocid="endpoint_detail.security"
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          {CONTROLS_ROW_1.map((c) => (
+          {CONTROL_DEFS.filter(
+            (c) => !c.applicableOs || c.applicableOs.includes(endpoint.os),
+          ).map((c) => (
             <ControlToggle
               key={c.key}
               label={c.label}
               description={c.description}
               enabled={audit.security[c.key]}
-            />
-          ))}
-        </div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {CONTROLS_ROW_2.map((c) => (
-            <ControlToggle
-              key={c.key}
-              label={c.label}
-              description={c.description}
-              enabled={audit.security[c.key]}
+              applicable={!c.applicableOs || c.applicableOs.includes(endpoint.os)}
             />
           ))}
         </div>

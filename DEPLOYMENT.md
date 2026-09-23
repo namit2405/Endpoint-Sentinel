@@ -1,7 +1,7 @@
 # Production Deployment
 
 The production image serves the built frontend and Django API from one container.
-Nginx listens on ports `8001` and `5174`; both ports serve the same application.
+Production publishes port `8001`; the frontend and API are both available there.
 The frontend uses same-origin `/api` requests, so no Vite development server is needed.
 
 ## GitHub Actions secrets
@@ -15,7 +15,9 @@ Add these repository secrets:
 - `GHCR_READ_TOKEN`: fine-grained GitHub token with read-only package access
 
 The workflow checks Django and the frontend on pull requests. A push to `main` publishes
-`ghcr.io/namit2405/endpoint-sentinel:latest` and redeploys the Ubuntu host.
+`ghcr.io/namit2405/endpoint-sentinel:latest`, pulls it on the Ubuntu host, recreates the
+container, and verifies the health endpoint. Do not build the image manually on the
+production host; manual Docker commands are only needed for the initial host bootstrap.
 
 ## Ubuntu host
 
@@ -40,5 +42,6 @@ cd /opt/endpoint-sentinel
 docker compose -f compose.production.yml up -d
 ```
 
-The application will be available at `http://103.164.67.226:8001` and
-`http://103.164.67.226:5174`. Only forward one port publicly if possible.
+After this initial setup, pushes to `main` deploy automatically through GitHub Actions.
+
+The application will be available at `http://103.164.67.226:8001`.
