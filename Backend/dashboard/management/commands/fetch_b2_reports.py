@@ -353,37 +353,31 @@ class Command(BaseCommand):
                 )
                 continue
 
-            # Parse security metrics from HTML
+            # Use the same canonical parser as local imports and S3 events.
+            # Keeping a second inline parser here caused identical reports to
+            # produce different security-control values by ingestion route.
             parsed_data = self.parse_html_report(html_content)
-            if os_type == 'macos':
-                # Keep one parser contract for macOS reports. The legacy inline
-                # parser expects an older span-based HTML format and misses the
-                # current scorecard controls.
-                try:
-                    from parsers.macos_parser import parse as parse_macos_report
+            try:
+                from parsers import linux_parser, macos_parser, windows_parser
 
-                    with tempfile.NamedTemporaryFile(
-                        mode='w', suffix='.html', encoding='utf-8', delete=True
-                    ) as report_file:
-                        report_file.write(html_content)
-                        report_file.flush()
-                        canonical_data = parse_macos_report(report_file.name)
-                    for field in (
-                        'ip_address', 'pending_updates', 'firewall_enabled',
-                        'encryption_enabled', 'antivirus_installed',
-                        'antivirus_realtime', 'secure_boot_enabled',
-                        'tpm_present', 'ssh_enabled', 'auditd_enabled',
-                        'passwordless_sudo', 'sip_enabled', 'gatekeeper_enabled',
-                        'screen_lock_enabled', 'pass_max_days', 'pass_min_days',
-                        'pass_min_len', 'lockout_threshold',
-                    ):
-                        parsed_data[field] = canonical_data.get(field)
-                except Exception as exc:
-                    self.stdout.write(
-                        self.style.WARNING(
-                            f'    macOS canonical parser failed; using legacy parser: {exc}'
-                        )
+                parser = {
+                    'linux': linux_parser,
+                    'macos': macos_parser,
+                    'windows': windows_parser,
+                }[os_type]
+                with tempfile.NamedTemporaryFile(
+                    mode='w', suffix='.html', encoding='utf-8', delete=True
+                ) as report_file:
+                    report_file.write(html_content)
+                    report_file.flush()
+                    canonical_data = parser.parse(report_file.name)
+                parsed_data.update(canonical_data)
+            except Exception as exc:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f'    Canonical {os_type} parser failed; using legacy parser: {exc}'
                     )
+                )
             parsed_data["os_type"] = os_type
             risk_score, risk_level, _ = calculate(parsed_data)
             

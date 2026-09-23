@@ -38,6 +38,15 @@ def _table_rows(table) -> list[list[str]]:
     return rows
 
 
+def _table_label_values(table) -> dict[str, str]:
+    """Return values from a two-column label/value table."""
+    values = {}
+    for row in _table_rows(table):
+        if len(row) >= 2:
+            values[row[0].lower()] = row[1]
+    return values
+
+
 def _first_value_row(table, header_skip: int = 1) -> Optional[list[str]]:
     """Return the first non-header row of a table."""
     rows = _table_rows(table)
@@ -137,7 +146,18 @@ def parse(filepath: str | Path) -> dict:
         row = _first_value_row(sys_tbl)
         if row:
             ncols = len(row)
-            if ncols >= 12:
+            sys_values = _table_label_values(sys_tbl)
+            if len(sys_values) >= 4 and "parameter" in _table_rows(sys_tbl)[0][0].lower():
+                sys_info = {
+                    "hostname": sys_values.get("hostname", ""),
+                    "os_name": sys_values.get("os", ""),
+                    "os_version": sys_values.get("version", ""),
+                    "architecture": sys_values.get("architecture", ""),
+                    "cpu": sys_values.get("cpu", ""),
+                    "ram": sys_values.get("ram", ""),
+                    "ip_address": sys_values.get("ip address", ""),
+                }
+            elif ncols >= 12:
                 # New 14-column format
                 sys_info = {
                     "hostname":     row[0],
@@ -190,6 +210,8 @@ def parse(filepath: str | Path) -> dict:
                         ip_address = cand
                         break
     if not ip_address:
+        ip_address = sys_info.get("ip_address", "")
+    if not ip_address:
         # Fallback: first non-loopback IP anywhere in page
         for m in re.finditer(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", page_text):
             cand = m.group(1)
@@ -209,7 +231,13 @@ def parse(filepath: str | Path) -> dict:
     antivirus_realtime       = None
     antivirus_updated_at     = None
     antivirus_tamper         = None
-    if av_tbl:
+    av_result, av_detail = _scorecard(soup, "Antivirus / EDR")
+    if av_result:
+        antivirus_installed = av_result == "pass"
+        realtime_match = re.search(r"real[- ]time protection:\s*(true|false)", av_detail)
+        if realtime_match:
+            antivirus_realtime = realtime_match.group(1) == "true"
+    elif av_tbl:
         av_row = _first_value_row(av_tbl)
         if av_row:
             antivirus_installed  = av_row[0].lower() == "true" if len(av_row) > 0 else None
@@ -274,7 +302,10 @@ def parse(filepath: str | Path) -> dict:
     # ── Firewall (Section 8) ──────────────────────────────────────────────
     fw_tbl = _find_section(soup, "Firewall")
     firewall_enabled = None
-    if fw_tbl:
+    scorecard_result, _ = _scorecard(soup, "Firewall")
+    if scorecard_result:
+        firewall_enabled = scorecard_result == "pass"
+    elif fw_tbl:
         fw_data = [
             r for r in _table_rows(fw_tbl)
             if r and r[0] not in ("Name", "")
@@ -287,7 +318,12 @@ def parse(filepath: str | Path) -> dict:
     # ── Secure Boot (Section 9) ───────────────────────────────────────────
     sb_tbl = _find_section(soup, "Secure Boot")
     secure_boot_enabled = None
-    if sb_tbl:
+    sb_result, sb_detail = _scorecard(soup, "Secure Boot")
+    if sb_result:
+        secure_boot_enabled = sb_result == "pass" and not any(
+            marker in sb_detail for marker in ("legacy", "n/a", "access denied")
+        )
+    elif sb_tbl:
         sb_row = _first_value_row(sb_tbl)
         if sb_row:
             val = sb_row[0].lower()
@@ -299,7 +335,10 @@ def parse(filepath: str | Path) -> dict:
     # ── TPM (Section 10) ──────────────────────────────────────────────────
     tpm_tbl = _find_section(soup, "TPM")
     tpm_present = None
-    if tpm_tbl:
+    tpm_result, tpm_detail = _scorecard(soup, "TPM Present")
+    if tpm_result:
+        tpm_present = tpm_result == "pass" and "not detected" not in tpm_detail
+    elif tpm_tbl:
         tpm_row = _first_value_row(tpm_tbl)
         if tpm_row:
             # TPM Present column (first col)
@@ -329,21 +368,22 @@ def parse(filepath: str | Path) -> dict:
                     pass_min_len = extract_int(v)
                 elif "lockout threshold" in h:
                     lockout_threshold = extract_int(v)
-    # Plain-text fallback
-    if pass_max_days is None:
-        pw_section = re.search(
-            r"Password Policy.*?(?=\d+\.|$)", page_text, re.IGNORECASE | re.DOTALL
-        )
-        if pw_section:
-            pw_text = pw_section.group(0)
-            max_m = re.search(r"Maximum password age.*?(\d+)", pw_text)
-            min_m = re.search(r"Minimum password age.*?(\d+)", pw_text)
-            len_m = re.search(r"Minimum password length.*?(\d+)", pw_text)
-            lok_m = re.search(r"Lockout threshold.*?(\d+)", pw_text)
-            pass_max_days     = int(max_m.group(1)) if max_m and pass_max_days is None else pass_max_days
-            pass_min_days     = int(min_m.group(1)) if min_m and pass_min_days is None else pass_min_days
-            pass_min_len      = int(len_m.group(1)) if len_m and pass_min_len  is None else pass_min_len
-            lockout_threshold = int(lok_m.group(1)) if lok_m and lockout_threshold is None else lockout_threshold
+    # Current reports place the policy in a preformatted Security Controls block.
+    policy_patterns = {
+        "pass_max_days": r"maximum password age\s*=\s*(\d+)",
+        "pass_min_days": r"minimum password age\s*=\s*(\d+)",
+        "pass_min_len": r"minimum password length\s*=\s*(\d+)",
+        "lockout_threshold": r"lockout threshold\s*=\s*(\d+)",
+    }
+    policy_values = {
+        name: int(match.group(1))
+        for name, pattern in policy_patterns.items()
+        if (match := re.search(pattern, page_text, re.IGNORECASE))
+    }
+    pass_max_days = pass_max_days if pass_max_days is not None else policy_values.get("pass_max_days")
+    pass_min_days = pass_min_days if pass_min_days is not None else policy_values.get("pass_min_days")
+    pass_min_len = pass_min_len if pass_min_len is not None else policy_values.get("pass_min_len")
+    lockout_threshold = lockout_threshold if lockout_threshold is not None else policy_values.get("lockout_threshold")
 
     # ── Screen Lock (Section 12) ──────────────────────────────────────────
     screen_lock_enabled = None

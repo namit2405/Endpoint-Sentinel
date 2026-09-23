@@ -36,7 +36,7 @@ describe("Endpoint Detail page", () => {
     expect(screen.getByText("41%")).toBeInTheDocument(); // disk usage
   });
 
-  it("renders security control toggles reflecting seeded state", async () => {
+  it("renders explicit security control statuses", async () => {
     // srv-backup-04 has firewall disabled.
     await openDetail("srv-backup-04");
 
@@ -50,9 +50,8 @@ describe("Endpoint Detail page", () => {
     expect(screen.getByText("Auditd")).toBeInTheDocument();
     expect(screen.getByText("Passwordless sudo")).toBeInTheDocument();
 
-    // Firewall toggle is disabled (unchecked) for this endpoint.
     expect(
-      screen.getByRole("switch", { name: "Firewall disabled" }),
+      screen.getByRole("status", { name: "Firewall disabled" }),
     ).toBeInTheDocument();
   });
 

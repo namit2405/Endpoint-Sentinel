@@ -9,13 +9,6 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   formatPercent,
   formatUptime,
@@ -200,6 +193,12 @@ function ControlToggle({
 }) {
   const isUnknown = enabled === null;
   const isEnabled = enabled === true;
+  const statusLabel = isUnknown ? "Unknown" : isEnabled ? "Enabled" : "Disabled";
+  const statusClass = isEnabled
+    ? "bg-success/15 text-success"
+    : isUnknown
+      ? "bg-muted text-muted-foreground"
+      : "bg-destructive/15 text-destructive";
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 p-3">
@@ -207,27 +206,13 @@ function ControlToggle({
         <p className="truncate text-sm font-medium text-foreground">{label}</p>
         <p className="truncate text-xs text-muted-foreground">{description}</p>
       </div>
-      <TooltipProvider delayDuration={100}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex">
-              <Switch
-                checked={isEnabled}
-                disabled
-                aria-label={`${label} ${isUnknown ? "unknown" : isEnabled ? "enabled" : "disabled"}`}
-                className={
-                  isEnabled
-                    ? "border-border/80 disabled:opacity-100 data-[state=checked]:bg-success"
-                    : isUnknown
-                      ? "border-border/80 disabled:opacity-100 data-[state=unchecked]:bg-muted"
-                      : "border-border/80 disabled:opacity-100 data-[state=unchecked]:bg-destructive/45 data-[state=checked]:bg-destructive"
-                }
-              />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{isUnknown ? "Unknown" : isEnabled ? "Enabled" : "Disabled"}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <Badge
+        role="status"
+        aria-label={`${label} ${statusLabel.toLowerCase()}`}
+        className={statusClass}
+      >
+        {statusLabel}
+      </Badge>
     </div>
   );
 }
