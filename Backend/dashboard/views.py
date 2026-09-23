@@ -18,7 +18,6 @@ import json
 from datetime import timedelta
 
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.http import JsonResponse
 from django.utils.timezone import now
@@ -26,6 +25,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.permissions import IsAuthenticated
 
 from .models import EndpointDevice, EndpointReport, EndpointStatus, EndpointCommand, PowerActionLog
@@ -388,8 +388,9 @@ def agent_report_command_result(request, command_id):
 
 # ── Power Management API ─────────────────────────────────────────────────────
 
-@login_required
-@require_POST
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def power_on_wol(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/on/
@@ -464,8 +465,9 @@ def power_on_wol(request, hostname):
         }, status=500)
 
 
-@login_required
-@require_POST
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def power_shutdown(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/shutdown/
@@ -516,8 +518,9 @@ def power_shutdown(request, hostname):
     })
 
 
-@login_required
-@require_POST
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def power_restart(request, hostname):
     """
     POST /api/endpoints/<hostname>/power/restart/
