@@ -135,6 +135,8 @@ class EndpointDevice(models.Model):
     hostname = models.CharField(max_length=255)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     os = models.CharField(max_length=255, null=True, blank=True)
+    DEVICE_TYPE_CHOICES = [('physical', 'Physical'), ('vm', 'Virtual Machine'), ('container', 'Container')]
+    device_type = models.CharField(max_length=20, choices=DEVICE_TYPE_CHOICES, default='physical')
     company = models.ForeignKey(
         "Company", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="endpoint_devices",

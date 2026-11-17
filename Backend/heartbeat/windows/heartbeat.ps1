@@ -64,6 +64,17 @@ try {
     # Silent fail — WoL_enabled is optional
 }
 
+# ── Detect virtualisation ──────────────────────────────────────────────────
+$DeviceType = "physical"
+try {
+    $Model = (Get-CimInstance -ClassName Win32_ComputerSystem).Model
+    if ($Model -match "Virtual|VMware|VirtualBox|KVM|Hyper-V|QEMU|innotek") {
+        $DeviceType = "vm"
+    }
+} catch {
+    # Silent fail — device_type defaults to physical
+}
+
 # ── Build heartbeat payload ──────────────────────────────────────────────
 $HeartbeatBody = @{
     hostname      = $Hostname
@@ -71,6 +82,7 @@ $HeartbeatBody = @{
     ip_address    = $IP
     username      = $Username
     agent_version = $AgentVersion
+    device_type   = $DeviceType
 }
 
 # Phase 3: optional fields

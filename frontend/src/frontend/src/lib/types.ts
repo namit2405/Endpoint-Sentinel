@@ -6,6 +6,8 @@ export type RiskLevel = "low" | "medium" | "high";
 
 export type ConnectionStatus = "online" | "warning" | "offline";
 
+export type DeviceType = "physical" | "vm" | "container";
+
 export interface SecurityControls {
   firewall: boolean | null;
   encryption: boolean | null;
@@ -64,6 +66,7 @@ export interface EndpointStatus {
   health_score: number;
   health_status: HealthStatus;
   wol_enabled: boolean | null;
+  device_type: DeviceType;
   firewall_active: boolean;
   antivirus_active: boolean;
   last_seen: number;

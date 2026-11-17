@@ -1,6 +1,7 @@
 import { apiClient } from "./api-client";
 import type {
   DashboardSummary,
+  DeviceType,
   EndpointStatus,
   HealthTrendPoint,
   OSDistribution,
@@ -26,6 +27,7 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
       health_score: ep.health_score ?? 100,
       health_status: (ep.health_status ?? "healthy") as "healthy" | "warning" | "critical",
       wol_enabled: ep.wol_enabled ?? null,
+      device_type: (ep.device_type ?? "physical") as DeviceType,
       firewall_active: ep.firewall_active ?? false,
       antivirus_active: ep.antivirus_active ?? false,
       last_seen: new Date(ep.last_seen).getTime(),

@@ -11,6 +11,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { apiClient } from "@/lib/api-client";
 import { connectionStatusBg } from "@/lib/format";
 import { useEndpoints } from "@/lib/useEndpoints";
@@ -79,18 +85,37 @@ export default function PowerManagementPage() {
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">{endpoint.ip_address} · {endpoint.mac_address}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {endpoint.wol_enabled === true
-                        ? "Wake-on-LAN available"
-                        : endpoint.wol_enabled === false
-                          ? "Wake-on-LAN disabled"
-                          : "Wake-on-LAN status unknown"}
+                      {endpoint.device_type === "vm"
+                        ? "Wake-on-LAN not applicable (virtual machine)"
+                        : endpoint.wol_enabled === true
+                          ? "Wake-on-LAN available"
+                          : endpoint.wol_enabled === false
+                            ? "Wake-on-LAN disabled"
+                            : "Wake-on-LAN status unknown"}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {!online && (
-                      <Button size="sm" variant="outline" disabled={Boolean(actionBusy) || endpoint.wol_enabled !== true} onClick={() => requestAction(endpoint.hostname, "on")}>
-                        <Zap className="mr-2 size-4" /> Wake
-                      </Button>
+                      endpoint.device_type === "vm" ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span>
+                                <Button size="sm" variant="outline" disabled>
+                                  <Zap className="mr-2 size-4" /> Wake
+                                </Button>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Wake-on-LAN is not supported for virtual machines
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        <Button size="sm" variant="outline" disabled={Boolean(actionBusy) || endpoint.wol_enabled !== true} onClick={() => requestAction(endpoint.hostname, "on")}>
+                          <Zap className="mr-2 size-4" /> Wake
+                        </Button>
+                      )
                     )}
                     {online && (
                       <>

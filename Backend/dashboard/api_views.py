@@ -207,6 +207,7 @@ def _serialize_endpoint_status(ep):
         "process_count": ep.process_count,
         "firewall_active": ep.firewall_active,
         "antivirus_active": ep.antivirus_active,
+        "device_type": getattr(ep.endpoint_device, "device_type", "physical") if ep.endpoint_device else "physical",
     }
 
 

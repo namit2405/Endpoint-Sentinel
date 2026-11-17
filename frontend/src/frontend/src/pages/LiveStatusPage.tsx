@@ -34,6 +34,7 @@ import {
 } from "@/lib/format";
 import type {
   ConnectionStatus,
+  DeviceType,
   EndpointStatus,
   OS,
   RiskLevel,
@@ -86,6 +87,12 @@ const RISK_OPTIONS: Array<{ value: "all" | RiskLevel; label: string }> = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
+];
+
+const DEVICE_TYPE_OPTIONS: Array<{ value: "all" | DeviceType; label: string }> = [
+  { value: "all",      label: "All Types" },
+  { value: "physical", label: "Physical" },
+  { value: "vm",       label: "VM" },
 ];
 
 const MIN = 60_000;
@@ -213,6 +220,7 @@ export default function LiveStatusPage() {
     "all",
   );
   const [riskFilter, setRiskFilter] = useState<"all" | RiskLevel>("all");
+  const [deviceTypeFilter, setDeviceTypeFilter] = useState<"all" | DeviceType>("all");
   const [sortKey, setSortKey] = useState<SortKey>("hostname");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [pageSize, setPageSize] = useState<number>(25);
@@ -229,6 +237,7 @@ export default function LiveStatusPage() {
         return false;
       if (riskFilter !== "all" && e.audit.riskLevel !== riskFilter)
         return false;
+      if (deviceTypeFilter !== "all" && e.device_type !== deviceTypeFilter) return false;
       return true;
     });
 
@@ -241,7 +250,7 @@ export default function LiveStatusPage() {
       }
       return ((av as number) - (bv as number)) * dir;
     });
-  }, [endpoints, osFilter, statusFilter, riskFilter, sortKey, sortDir]);
+  }, [endpoints, osFilter, statusFilter, riskFilter, deviceTypeFilter, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -399,6 +408,29 @@ export default function LiveStatusPage() {
               </SelectContent>
             </Select>
 
+            <Select
+              value={deviceTypeFilter}
+              onValueChange={(v) => {
+                setDeviceTypeFilter(v as "all" | DeviceType);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger
+                className="w-40"
+                aria-label="Filter by device type"
+                data-ocid="live_status.filter_device_type"
+              >
+                <SelectValue placeholder="All Types" />
+              </SelectTrigger>
+              <SelectContent>
+                {DEVICE_TYPE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <span className="ml-auto text-sm text-muted-foreground">
               {filtered.length} of {endpoints.length} endpoints
             </span>
@@ -471,9 +503,16 @@ export default function LiveStatusPage() {
                     >
                       <TableCell>
                         <div className="flex min-w-0 flex-col">
-                          <span className="truncate font-mono text-sm font-semibold text-foreground">
-                            {e.hostname}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="truncate font-mono text-sm font-semibold text-foreground">
+                              {e.hostname}
+                            </span>
+                            {e.device_type === "vm" && (
+                              <Badge className="shrink-0 rounded-full border-transparent bg-purple-500/15 text-purple-600 dark:text-purple-400 text-xs px-1.5 py-0">
+                                VM
+                              </Badge>
+                            )}
+                          </div>
                           <span className="truncate font-mono text-xs text-muted-foreground">
                             {e.ip_address}
                           </span>

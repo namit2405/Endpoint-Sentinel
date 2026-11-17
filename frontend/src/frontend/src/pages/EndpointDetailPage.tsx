@@ -352,6 +352,14 @@ export default function EndpointDetailPage() {
               >
                 {endpoint.os}
               </Badge>
+              {endpoint.device_type === "vm" && (
+                <Badge
+                  className="rounded-full border-transparent bg-purple-500/15 text-purple-600 dark:text-purple-400"
+                  data-ocid="endpoint_detail.vm_badge"
+                >
+                  Virtual Machine
+                </Badge>
+              )}
               <Badge
                 variant="outline"
                 className={`rounded-full ${
@@ -456,6 +464,14 @@ export default function EndpointDetailPage() {
               label="Connection uptime"
               value={formatUptime(endpoint.connection_uptime)}
             />
+            {endpoint.device_type === "vm" && (
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <dt className="text-sm text-muted-foreground">Wake-on-LAN</dt>
+                <dd className="text-sm font-medium text-muted-foreground italic">
+                  Not applicable (VM)
+                </dd>
+              </div>
+            )}
           </dl>
         </SectionCard>
       </div>

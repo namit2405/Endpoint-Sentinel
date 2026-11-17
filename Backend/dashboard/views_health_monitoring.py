@@ -69,7 +69,11 @@ def health_monitoring(request):
         hostname = data.get("hostname", "").strip()
         mac_address = data.get("mac_address", "").strip()
         os_type = data.get("os_type", "").strip()
-        
+
+        device_type = data.get("device_type", "physical")
+        if device_type not in ("physical", "vm", "container"):
+            device_type = "physical"
+
         if not hostname:
             return JsonResponse({"error": "hostname required"}, status=400)
         
@@ -82,6 +86,7 @@ def health_monitoring(request):
                 "hostname": hostname,
                 "os": os_type or "unknown",
                 "ip_address": data.get("ip_address", "").strip() or None,
+                "device_type": device_type,
             },
         )
         
@@ -132,7 +137,10 @@ def health_monitoring(request):
         
         # Store timestamp of last health check
         endpoint.last_health_check = now()
-        
+
+        if device_type == "vm":
+            endpoint.wol_enabled = False
+
         endpoint.save()
         
         # ── Create metrics history snapshot ──────────────────────────────

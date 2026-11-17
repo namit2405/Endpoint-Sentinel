@@ -102,6 +102,10 @@ def heartbeat(request):
         except ValueError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
 
+    device_type = data.get("device_type", "physical")
+    if device_type not in ("physical", "vm", "container"):
+        device_type = "physical"
+
     endpoint_device = None
     if mac_address:
         endpoint_device, _ = EndpointDevice.objects.update_or_create(
@@ -110,6 +114,7 @@ def heartbeat(request):
                 "hostname": data["hostname"],
                 "os": data["os"],
                 "ip_address": ip_address,
+                "device_type": device_type,
             },
         )
 
@@ -130,6 +135,9 @@ def heartbeat(request):
 
     if "wol_enabled" in data and data["wol_enabled"] is not None:
         defaults["wol_enabled"] = data["wol_enabled"]
+
+    if device_type == "vm":
+        defaults["wol_enabled"] = False
 
     lookup = {"mac_address": mac_address} if mac_address else {"hostname": data["hostname"]}
     EndpointStatus.objects.update_or_create(
@@ -192,6 +200,7 @@ def endpoints_status(request):
             "process_count": ep.process_count,
             "firewall_active": ep.firewall_active,
             "antivirus_active": ep.antivirus_active,
+            "device_type": getattr(ep.endpoint_device, "device_type", "physical") if ep.endpoint_device else "physical",
         })
 
         latest_report = reports.filter(

@@ -29,7 +29,7 @@ import {
   riskScoreColor,
   timeAgo,
 } from "@/lib/format";
-import type { EndpointStatus, OS, RiskLevel } from "@/lib/types";
+import type { DeviceType, EndpointStatus, OS, RiskLevel } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
 import { Link } from "@tanstack/react-router";
 import { jsPDF } from "jspdf";
@@ -56,6 +56,7 @@ interface Filters {
   risk: RiskLevel | "all";
   firewall: "all" | "on" | "off";
   antivirus: "all" | "on" | "off";
+  deviceType: DeviceType | "all";
   cpuModel: string;
   ramMin: number;
   ramMax: number;
@@ -68,6 +69,7 @@ const DEFAULT_FILTERS: Filters = {
   risk: "all",
   firewall: "all",
   antivirus: "all",
+  deviceType: "all",
   cpuModel: "",
   ramMin: 0,
   ramMax: 256,
@@ -96,6 +98,7 @@ function matchesFilters(e: EndpointStatus, f: Filters): boolean {
   if (f.firewall === "off" && e.firewall_active) return false;
   if (f.antivirus === "on" && !e.antivirus_active) return false;
   if (f.antivirus === "off" && e.antivirus_active) return false;
+  if (f.deviceType !== "all" && e.device_type !== f.deviceType) return false;
   if (
     f.cpuModel &&
     !e.audit.hardware.cpuModel.toLowerCase().includes(f.cpuModel.toLowerCase())
@@ -378,6 +381,7 @@ export default function InventoryPage() {
     if (filters.risk !== "all") n++;
     if (filters.firewall !== "all") n++;
     if (filters.antivirus !== "all") n++;
+    if (filters.deviceType !== "all") n++;
     if (filters.cpuModel) n++;
     if (filters.ramMin > 0 || filters.ramMax < 256) n++;
     if (filters.diskMin > 0 || filters.diskMax < 100) n++;
@@ -684,6 +688,34 @@ export default function InventoryPage() {
 
               <div className="space-y-1.5">
                 <label
+                  htmlFor="filter-device-type"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  Device type
+                </label>
+                <Select
+                  value={filters.deviceType}
+                  onValueChange={(v) =>
+                    setFilters((f) => ({ ...f, deviceType: v as Filters["deviceType"] }))
+                  }
+                >
+                  <SelectTrigger
+                    id="filter-device-type"
+                    data-ocid="inventory.filter.device_type"
+                    className="w-full"
+                  >
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All types</SelectItem>
+                    <SelectItem value="physical">Physical</SelectItem>
+                    <SelectItem value="vm">Virtual Machine</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label
                   htmlFor="filter-cpu"
                   className="text-xs font-medium text-muted-foreground"
                 >
@@ -861,6 +893,7 @@ export default function InventoryPage() {
               <TableRow className="bg-muted/40">
                 <TableHead>Hostname</TableHead>
                 <TableHead>OS</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>IP</TableHead>
                 <TableHead>MAC</TableHead>
                 <TableHead>CPU</TableHead>
@@ -905,6 +938,15 @@ export default function InventoryPage() {
                     <Badge variant="secondary" className="font-medium">
                       {e.os}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {e.device_type === "vm" ? (
+                      <Badge className="rounded-full border-transparent bg-purple-500/15 text-purple-600 dark:text-purple-400">
+                        VM
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Physical</span>
+                    )}
                   </TableCell>
                   <TableCell className="font-mono text-muted-foreground">
                     {e.ip_address}

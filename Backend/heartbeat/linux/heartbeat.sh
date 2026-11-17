@@ -64,18 +64,31 @@ if command -v ethtool >/dev/null 2>&1; then
 fi
 
 # =============================================================================
+# Detect virtualisation
+# =============================================================================
+
+DEVICE_TYPE="physical"
+if command -v systemd-detect-virt >/dev/null 2>&1; then
+    _virt=$(systemd-detect-virt 2>/dev/null)
+    if [ "$_virt" != "none" ] && [ -n "$_virt" ]; then
+        DEVICE_TYPE="vm"
+    fi
+fi
+
+# =============================================================================
 # Build heartbeat JSON
 # =============================================================================
 
-JSON=$(python3 - "$HOSTNAME_VAL" "$OS_VAL" "$IP_VAL" "$USERNAME_VAL" "$AGENT_VERSION" "$MAC_VAL" "$WOL_ENABLED" <<'PY'
+JSON=$(python3 - "$HOSTNAME_VAL" "$OS_VAL" "$IP_VAL" "$USERNAME_VAL" "$AGENT_VERSION" "$MAC_VAL" "$WOL_ENABLED" "$DEVICE_TYPE" <<'PY'
 import json, sys
-hostname, os_name, ip, username, agent_version, mac, wol_enabled = sys.argv[1:]
+hostname, os_name, ip, username, agent_version, mac, wol_enabled, device_type = sys.argv[1:]
 data = {
     "hostname": hostname,
     "os": os_name,
     "ip_address": ip,
     "username": username,
     "agent_version": agent_version,
+    "device_type": device_type,
 }
 if mac:
     data["mac_address"] = mac
