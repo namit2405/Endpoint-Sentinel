@@ -85,13 +85,16 @@ if DB_ENGINE == "django.db.backends.postgresql":
             "PASSWORD": config("DB_PASSWORD"),
             "HOST": config("DB_HOST"),
             "PORT": config("DB_PORT", cast=int),
-            "CONN_MAX_AGE": 600,  # Keep connections alive for 10 minutes
+            # CONN_MAX_AGE must be 0 when using Supabase shared pooler (PgBouncer
+            # transaction mode). Persistent connections cause stale cursor errors
+            # because PgBouncer routes each transaction to a potentially different
+            # backend connection, invalidating any server-side cursor opened earlier.
+            "CONN_MAX_AGE": 0,
+            # Disable server-side cursors entirely — PgBouncer transaction mode
+            # does not support them (raises InvalidCursorName in Django admin).
+            "DISABLE_SERVER_SIDE_CURSORS": True,
             "OPTIONS": {
                 "connect_timeout": 10,
-                "keepalives": 1,
-                "keepalives_idle": 30,
-                "keepalives_interval": 10,
-                "keepalives_count": 5,
             },
         }
     }

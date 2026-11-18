@@ -97,14 +97,14 @@ const DEVICE_TYPE_OPTIONS: Array<{ value: "all" | DeviceType; label: string }> =
 
 const MIN = 60_000;
 
-/** Derive connection status from last-seen recency: ≤1min online, ≤2min warning, else offline. */
+/** Derive connection status from last-seen recency: ≤3min online, ≤5min warning, else offline. */
 function connectionStatus(
   lastSeen: number,
   now = Date.now(),
 ): ConnectionStatus {
   const diff = now - lastSeen;
-  if (diff <= MIN) return "online";
-  if (diff <= 2 * MIN) return "warning";
+  if (diff <= 3 * MIN) return "online";
+  if (diff <= 5 * MIN) return "warning";
   return "offline";
 }
 

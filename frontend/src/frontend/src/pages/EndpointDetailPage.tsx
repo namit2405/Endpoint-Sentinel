@@ -647,9 +647,21 @@ export default function EndpointDetailPage() {
         <ol className="relative space-y-4 border-l border-border pl-5">
           {history.map((h, i) => {
             const reportTime = parseReportDate(h.date)?.getTime() ?? Date.now();
+            const reportDate = new Date(reportTime);
+            const todayLocal = new Date();
+            const reportLocal = new Date(
+              reportDate.getFullYear(),
+              reportDate.getMonth(),
+              reportDate.getDate(),
+            );
+            const todayMidnight = new Date(
+              todayLocal.getFullYear(),
+              todayLocal.getMonth(),
+              todayLocal.getDate(),
+            );
             const ageDays = Math.max(
               0,
-              Math.floor((Date.now() - reportTime) / (24 * 60 * 60 * 1000)),
+              Math.round((todayMidnight.getTime() - reportLocal.getTime()) / (24 * 60 * 60 * 1000)),
             );
             const ageLabel =
               ageDays === 0

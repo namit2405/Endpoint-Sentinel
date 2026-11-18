@@ -823,8 +823,8 @@ function Collect-And-Send-Health {
         )
         foreach ($entry in $knownFW) {
             try {
-                $svc = Get-Service -Name $entry.pattern -ErrorAction Stop
-                if ($svc -and $svc.Status -eq 'Running') {
+                $svc = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $entry.pattern -or $_.DisplayName -match $entry.pattern } | Where-Object { $_.Status -eq "Running" } | Select-Object -First 1
+                if ($svc) {
                     $fwProducts += @{ name = $entry.name; enabled = $true; up_to_date = $true }
                 }
             } catch { }
@@ -876,8 +876,8 @@ function Collect-And-Send-Health {
         )
         foreach ($entry in $knownAV) {
             try {
-                $svc = Get-Service -Name $entry.pattern -ErrorAction Stop
-                if ($svc -and $svc.Status -eq 'Running') {
+                $svc = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $entry.pattern -or $_.DisplayName -match $entry.pattern } | Where-Object { $_.Status -eq "Running" } | Select-Object -First 1
+                if ($svc) {
                     $avProducts += @{ name = $entry.name; enabled = $true; up_to_date = $true }
                 }
             } catch { }
@@ -895,12 +895,31 @@ function Collect-And-Send-Health {
 
     $antivirusActive = ($avProducts | Where-Object { $_.enabled }) -ne $null
 
-    # Serialize to JSON — handle ConvertTo-Json single-item unwrap
-    $fwJson = if ($fwProducts.Count -eq 0) { "[]" } elseif ($fwProducts.Count -eq 1) { "[$($fwProducts[0] | ConvertTo-Json -Compress -Depth 3)]" } else { $fwProducts | ConvertTo-Json -Compress -Depth 3 }
-    $avJson = if ($avProducts.Count -eq 0) { "[]" } elseif ($avProducts.Count -eq 1) { "[$($avProducts[0] | ConvertTo-Json -Compress -Depth 3)]" } else { $avProducts | ConvertTo-Json -Compress -Depth 3 }
+    # Serialize to JSON manually to guarantee valid JSON (ConvertTo-Json can produce
+    # PowerShell-style True/False booleans which are not valid JSON)
+    function ConvertTo-ProductJson {
+        param([array]$products)
+        if ($products.Count -eq 0) { return "[]" }
+        $items = $products | ForEach-Object {
+            $name    = $_.name -replace '"', '\"'
+            $enabled = if ($_.enabled) { "true" } else { "false" }
+            $upToDate = if ($_."up_to_date") { "true" } else { "false" }
+            "{`"name`":`"$name`",`"enabled`":$enabled,`"up_to_date`":$upToDate}"
+        }
+        return "[" + ($items -join ",") + "]"
+    }
+
+    $fwJson = ConvertTo-ProductJson -products $fwProducts
+    $avJson = ConvertTo-ProductJson -products $avProducts
+
+    $fwTempFile = [System.IO.Path]::GetTempFileName() + ".json"
+    $avTempFile = [System.IO.Path]::GetTempFileName() + ".json"
+    $fwJson | Set-Content $fwTempFile -Encoding UTF8 -NoNewline
+    $avJson | Set-Content $avTempFile -Encoding UTF8 -NoNewline
 
     if (-not (Test-Path $SupabaseHelper)) {
         Log-Msg "x Supabase helper not found: $SupabaseHelper"
+        Remove-Item $fwTempFile, $avTempFile -ErrorAction SilentlyContinue
         return $false
     }
 
@@ -915,8 +934,10 @@ function Collect-And-Send-Health {
         --hostname $hostnameValue `
         --ip $ipValue `
         --firewall $(if ($firewallActive) { "true" } else { "false" }) `
-        --firewall-products $fwJson `
-        --av-products $avJson 2>$null
+        --firewall-products "@$fwTempFile" `
+        --av-products "@$avTempFile" 2>$null
+
+    Remove-Item $fwTempFile, $avTempFile -ErrorAction SilentlyContinue
 
     if ($LASTEXITCODE -eq 0) {
         Log-Msg "* Health data sent"

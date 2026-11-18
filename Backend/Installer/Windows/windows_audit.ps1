@@ -218,23 +218,106 @@ try {
         }
     } catch { }
 }
+
+# Fallback: service-based scan for known AV/EDR agents (covers Windows Server where WSC is unavailable)
+if ($AV_STATUS -eq "No Antivirus/EDR Detected") {
+    $knownAVServices = @(
+        @{pattern="PandaAetherAgent|PandaAgent";       name="Panda/WatchGuard Endpoint Security"},
+        @{pattern="SophosMCS|SAVService";              name="Sophos"},
+        @{pattern="CsFalconService|CrowdStrike";       name="CrowdStrike Falcon"},
+        @{pattern="SentinelAgent";                     name="SentinelOne"},
+        @{pattern="CylanceSVC";                        name="Cylance"},
+        @{pattern="bdagent|bdredline";                 name="Bitdefender"},
+        @{pattern="AVP|KAVFS";                         name="Kaspersky"},
+        @{pattern="McShield|mfefire";                  name="McAfee"},
+        @{pattern="NortonSecurity|ccSvcHst";           name="Norton"},
+        @{pattern="AvastSvc";                          name="Avast"},
+        @{pattern="QUICK.*HEAL|QuickHeal";             name="Quick Heal"}
+    )
+    $detectedAV = @()
+    foreach ($entry in $knownAVServices) {
+        try {
+            $svc = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match $entry.pattern -or $_.DisplayName -match $entry.pattern }
+            if ($svc -and ($svc | Where-Object { $_.Status -eq 'Running' })) {
+                $detectedAV += $entry.name
+            }
+        } catch { }
+    }
+    if ($detectedAV.Count -gt 0) {
+        $AV_STATUS = $detectedAV -join ", "
+    }
+}
 $AVResult = if ($AV_STATUS -eq "No Antivirus/EDR Detected") { "Warn" } else { "Pass" }
 Add-Score "Antivirus / EDR" $AVResult $AV_STATUS
 
 # ============================================================
 # FIREWALL STATUS
+# Checks both Windows Defender Firewall and third-party
+# firewalls registered with Windows Security Center (WSC),
+# including FortiClient, Sophos, Norton, McAfee, etc.
 # ============================================================
 
+$FIREWALL_ACTIVE = "Fail"
+$FIREWALL_STATUS = ""
+
+# --- 1. Third-party firewalls via Windows Security Center (WSC) ---------------
+# WSC exposes every registered security product including FortiClient.
+# productState high byte: 1x = enabled, 0x = disabled.
+$ThirdPartyFWs = @()
+try {
+    $WscFWs = Get-CimInstance -Namespace "root\SecurityCenter2" `
+                              -ClassName "FirewallProduct" `
+                              -ErrorAction Stop
+    foreach ($fw in $WscFWs) {
+        $state    = [int]$fw.productState
+        $enabled  = (($state -shr 16) -band 0xFF) -eq 0x11  # high byte 0x11 = ON
+        $upToDate = (($state -shr 8)  -band 0xFF) -ne 0x10  # mid byte 0x10 = out-of-date
+        $ThirdPartyFWs += [PSCustomObject]@{
+            Name    = $fw.displayName
+            Enabled = $enabled
+            UpToDate = $upToDate
+        }
+    }
+} catch {
+    # WSC not available (Server Core, some VMs) — fall through to Windows Firewall
+}
+
+if ($ThirdPartyFWs.Count -gt 0) {
+    $FWLines = $ThirdPartyFWs | ForEach-Object {
+        "$($_.Name): $(if($_.Enabled){'Enabled'}else{'Disabled'})"
+    }
+    $FIREWALL_STATUS = $FWLines -join "`n"
+    $AnyEnabled = $ThirdPartyFWs | Where-Object { $_.Enabled }
+    if ($AnyEnabled) {
+        $FIREWALL_ACTIVE = "Pass"
+    }
+}
+
+# --- 2. Windows Defender Firewall (always check as supplementary info) --------
 $FW_PROFILES = Get-NetFirewallProfile -ErrorAction SilentlyContinue
 if ($FW_PROFILES) {
-    $FIREWALL_STATUS = ($FW_PROFILES | ForEach-Object { "$($_.Name): $(if($_.Enabled){'Enabled'}else{'Disabled'})" }) -join "`n"
-    $AllEnabled = -not ($FW_PROFILES | Where-Object { -not $_.Enabled })
-    $FIREWALL_ACTIVE = if ($AllEnabled) { "Pass" } else { "Fail" }
-} else {
-    $FIREWALL_STATUS = "Unable to query Windows Firewall profiles"
-    $FIREWALL_ACTIVE = "Fail"
+    $WinFWLines = $FW_PROFILES | ForEach-Object {
+        "Windows Firewall $($_.Name): $(if($_.Enabled){'Enabled'}else{'Disabled'})"
+    }
+    if ($FIREWALL_STATUS) {
+        $FIREWALL_STATUS += "`n" + ($WinFWLines -join "`n")
+    } else {
+        $FIREWALL_STATUS = $WinFWLines -join "`n"
+        $AllEnabled = -not ($FW_PROFILES | Where-Object { -not $_.Enabled })
+        $FIREWALL_ACTIVE = if ($AllEnabled) { "Pass" } else { "Fail" }
+    }
 }
-Add-Score "Firewall" $FIREWALL_ACTIVE "Tool: Windows Firewall (netsh advfirewall)"
+
+if (-not $FIREWALL_STATUS) {
+    $FIREWALL_STATUS = "Unable to query firewall status"
+}
+
+$FWTool = if ($ThirdPartyFWs.Count -gt 0) {
+    ($ThirdPartyFWs | Select-Object -ExpandProperty Name) -join ", "
+} else {
+    "Windows Firewall (netsh advfirewall)"
+}
+Add-Score "Firewall" $FIREWALL_ACTIVE "Tool: $FWTool"
 
 # ============================================================
 # NETWORK ADAPTERS & DNS

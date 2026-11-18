@@ -167,8 +167,10 @@ class SupabaseAgent:
             query = sql.SQL(
                 """
                 INSERT INTO dashboard_endpointstatus
-                (hostname, os, ip_address, mac_address, username, agent_version, wol_enabled, last_seen, connection_started_at, updated_at, health_score, health_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW(), NOW(), 100.0, 'healthy')
+                (hostname, os, ip_address, mac_address, username, agent_version, wol_enabled,
+                 firewall_products, antivirus_products,
+                 last_seen, connection_started_at, updated_at, health_score, health_status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, '[]', '[]', NOW(), NOW(), NOW(), 100.0, 'healthy')
                 ON CONFLICT (mac_address) DO UPDATE SET
                     hostname = EXCLUDED.hostname,
                     os = EXCLUDED.os,
@@ -560,8 +562,24 @@ def main():
             fw = None
             if hasattr(args, 'firewall') and args.firewall is not None:
                 fw = args.firewall == "true"
-            firewall_products = json.loads(args.firewall_products)
-            antivirus_products = json.loads(args.av_products)
+            # JSON may arrive as a file path (prefixed with @) or inline string
+            def load_json_arg(val):
+                if not val or val == '[]':
+                    return []
+                v = val.strip()
+                if v.startswith('@') and os.path.exists(v[1:]):
+                    with open(v[1:], 'r', encoding='utf-8-sig') as f:
+                        content = f.read().strip()
+                        return json.loads(content) if content else []
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    try:
+                        return [json.loads(v)]
+                    except Exception:
+                        return []
+            firewall_products = load_json_arg(args.firewall_products)
+            antivirus_products = load_json_arg(args.av_products)
             success = agent.insert_health(
                 mac_address=args.mac,
                 cpu_percent=args.cpu,
