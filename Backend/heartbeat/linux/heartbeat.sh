@@ -76,12 +76,40 @@ if command -v systemd-detect-virt >/dev/null 2>&1; then
 fi
 
 # =============================================================================
+# Firewall product detection
+# =============================================================================
+
+FW_PRODUCTS="[]"
+FW_NAME=""
+for svc in ufw firewalld nftables iptables; do
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+        FW_NAME="$svc"
+        break
+    fi
+done
+if [ -n "$FW_NAME" ]; then
+    FW_PRODUCTS="[{\"name\":\"$FW_NAME\",\"enabled\":true,\"up_to_date\":true}]"
+fi
+
+# =============================================================================
+# AV product detection
+# =============================================================================
+
+AV_PRODUCTS="[]"
+for av in clamav sophos-av bitdefender eset; do
+    if command -v "$av" >/dev/null 2>&1 || systemctl is-active --quiet "$av" 2>/dev/null; then
+        AV_PRODUCTS="[{\"name\":\"$av\",\"enabled\":true,\"up_to_date\":true}]"
+        break
+    fi
+done
+
+# =============================================================================
 # Build heartbeat JSON
 # =============================================================================
 
-JSON=$(python3 - "$HOSTNAME_VAL" "$OS_VAL" "$IP_VAL" "$USERNAME_VAL" "$AGENT_VERSION" "$MAC_VAL" "$WOL_ENABLED" "$DEVICE_TYPE" <<'PY'
+JSON=$(python3 - "$HOSTNAME_VAL" "$OS_VAL" "$IP_VAL" "$USERNAME_VAL" "$AGENT_VERSION" "$MAC_VAL" "$WOL_ENABLED" "$DEVICE_TYPE" "$FW_PRODUCTS" "$AV_PRODUCTS" <<'PY'
 import json, sys
-hostname, os_name, ip, username, agent_version, mac, wol_enabled, device_type = sys.argv[1:]
+hostname, os_name, ip, username, agent_version, mac, wol_enabled, device_type, fw_products, av_products = sys.argv[1:]
 data = {
     "hostname": hostname,
     "os": os_name,
@@ -89,6 +117,8 @@ data = {
     "username": username,
     "agent_version": agent_version,
     "device_type": device_type,
+    "firewall_products": json.loads(fw_products),
+    "antivirus_products": json.loads(av_products),
 }
 if mac:
     data["mac_address"] = mac

@@ -139,6 +139,21 @@ def heartbeat(request):
     if device_type == "vm":
         defaults["wol_enabled"] = False
 
+    # Security product lists (optional, sent by newer agent versions)
+    firewall_products = data.get("firewall_products", [])
+    antivirus_products = data.get("antivirus_products", [])
+    if isinstance(firewall_products, str):
+        firewall_products = json.loads(firewall_products)
+    if isinstance(antivirus_products, str):
+        antivirus_products = json.loads(antivirus_products)
+    if firewall_products or antivirus_products:
+        defaults["firewall_products"] = firewall_products
+        defaults["antivirus_products"] = antivirus_products
+    if firewall_products:
+        defaults["firewall_active"] = any(p.get("enabled") for p in firewall_products)
+    if antivirus_products:
+        defaults["antivirus_active"] = any(p.get("enabled") for p in antivirus_products)
+
     lookup = {"mac_address": mac_address} if mac_address else {"hostname": data["hostname"]}
     EndpointStatus.objects.update_or_create(
         **lookup,
@@ -168,9 +183,9 @@ def endpoints_status(request):
         delta = _now - ep.last_seen
         secs = int(delta.total_seconds())
 
-        if delta <= timedelta(minutes=1):
+        if delta <= timedelta(minutes=3):
             status = "online"
-        elif delta <= timedelta(minutes=2):
+        elif delta <= timedelta(minutes=5):
             status = "warning"
         else:
             status = "offline"
@@ -197,10 +212,16 @@ def endpoints_status(request):
             "cpu_percent": ep.cpu_percent,
             "memory_percent": ep.memory_percent,
             "disk_percent": ep.disk_percent,
+            "uptime_seconds": ep.uptime_seconds,
+            "connection_started_at": ep.connection_started_at.isoformat() if ep.connection_started_at else None,
+            "last_health_check": ep.last_health_check.isoformat() if ep.last_health_check else None,
             "process_count": ep.process_count,
             "firewall_active": ep.firewall_active,
             "antivirus_active": ep.antivirus_active,
+            "wol_enabled": ep.wol_enabled,
             "device_type": getattr(ep.endpoint_device, "device_type", "physical") if ep.endpoint_device else "physical",
+            "firewall_products": ep.firewall_products if hasattr(ep, 'firewall_products') and ep.firewall_products else [],
+            "antivirus_products": ep.antivirus_products if hasattr(ep, 'antivirus_products') and ep.antivirus_products else [],
         })
 
         latest_report = reports.filter(

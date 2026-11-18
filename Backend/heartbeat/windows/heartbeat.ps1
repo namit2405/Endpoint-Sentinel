@@ -75,14 +75,103 @@ try {
     # Silent fail — device_type defaults to physical
 }
 
+# ── Detect firewall products ───────────────────────────────────────────────
+$fwProductsForJson = @()
+$wscFWAvailable = $false
+try {
+    $wscFWs = Get-CimInstance -Namespace "root\SecurityCenter2" -ClassName "FirewallProduct" -ErrorAction Stop
+    $wscFWAvailable = $true
+    foreach ($fw in $wscFWs) {
+        $state = [int]$fw.productState
+        $fwEnabled = (($state -shr 16) -band 0xFF) -eq 0x11
+        $fwUpToDate = (($state -shr 8) -band 0xFF) -ne 0x10
+        $fwProductsForJson += [PSCustomObject]@{ name = $fw.displayName; enabled = $fwEnabled; up_to_date = $fwUpToDate }
+    }
+} catch { }
+
+if (-not $wscFWAvailable -or $fwProductsForJson.Count -eq 0) {
+    $knownFW = @(
+        @{pattern="SophosFirewall|swi_service"; name="Sophos Firewall"},
+        @{pattern="CsFalconService"; name="CrowdStrike (network control)"},
+        @{pattern="WatchGuardEndpoint"; name="WatchGuard Endpoint Firewall"},
+        @{pattern="FortiESNAC|FortiClient"; name="FortiClient Firewall"}
+    )
+    foreach ($entry in $knownFW) {
+        try {
+            $svc = Get-Service -Name $entry.pattern -ErrorAction Stop
+            if ($svc -and $svc.Status -eq 'Running') {
+                $fwProductsForJson += [PSCustomObject]@{ name = $entry.name; enabled = $true; up_to_date = $true }
+            }
+        } catch { }
+    }
+    if ($fwProductsForJson.Count -eq 0) {
+        try {
+            $profiles = Get-NetFirewallProfile -ErrorAction Stop
+            $allEnabled = -not ($profiles | Where-Object { -not $_.Enabled })
+            if ($allEnabled) {
+                $fwProductsForJson += [PSCustomObject]@{ name = "Windows Defender Firewall"; enabled = $true; up_to_date = $true }
+            }
+        } catch { }
+    }
+}
+
+# ── Detect antivirus products ──────────────────────────────────────────────
+$avProductsForJson = @()
+$wscAVAvailable = $false
+try {
+    $wscAVs = Get-CimInstance -Namespace "root\SecurityCenter2" -ClassName "AntiVirusProduct" -ErrorAction Stop
+    $wscAVAvailable = $true
+    foreach ($av in $wscAVs) {
+        $state = [int]$av.productState
+        $avEnabled = (($state -shr 16) -band 0xFF) -eq 0x11
+        $avUpToDate = (($state -shr 8) -band 0xFF) -ne 0x10
+        $avProductsForJson += [PSCustomObject]@{ name = $av.displayName; enabled = $avEnabled; up_to_date = $avUpToDate }
+    }
+} catch { }
+
+if (-not $wscAVAvailable -or $avProductsForJson.Count -eq 0) {
+    $knownAV = @(
+        @{pattern="PandaAetherAgent|PandaAgent"; name="Panda/WatchGuard Endpoint Security"},
+        @{pattern="SophosMCS|SAVService"; name="Sophos"},
+        @{pattern="CsFalconService|CrowdStrike"; name="CrowdStrike Falcon"},
+        @{pattern="SentinelAgent"; name="SentinelOne"},
+        @{pattern="CylanceSVC"; name="Cylance"},
+        @{pattern="MsMpEng|WinDefend"; name="Windows Defender Antivirus"},
+        @{pattern="QHActiveDefense"; name="Quick Heal"},
+        @{pattern="AvastSvc|aswbIDSAgent"; name="Avast"},
+        @{pattern="AVP|KAVFS"; name="Kaspersky"},
+        @{pattern="McShield|mfefire"; name="McAfee"},
+        @{pattern="NortonSecurity|ccSvcHst"; name="Norton"},
+        @{pattern="bdagent|bdredline"; name="Bitdefender"}
+    )
+    foreach ($entry in $knownAV) {
+        try {
+            $svc = Get-Service -Name $entry.pattern -ErrorAction Stop
+            if ($svc -and $svc.Status -eq 'Running') {
+                $avProductsForJson += [PSCustomObject]@{ name = $entry.name; enabled = $true; up_to_date = $true }
+            }
+        } catch { }
+    }
+    if ($avProductsForJson.Count -eq 0) {
+        try {
+            $mpStatus = Get-MpComputerStatus -ErrorAction Stop
+            if ($mpStatus.AntivirusEnabled) {
+                $avProductsForJson += [PSCustomObject]@{ name = "Windows Defender Antivirus"; enabled = $true; up_to_date = (-not $mpStatus.AntivirusSignatureOutOfDate) }
+            }
+        } catch { }
+    }
+}
+
 # ── Build heartbeat payload ──────────────────────────────────────────────
 $HeartbeatBody = @{
-    hostname      = $Hostname
-    os            = $OS
-    ip_address    = $IP
-    username      = $Username
-    agent_version = $AgentVersion
-    device_type   = $DeviceType
+    hostname           = $Hostname
+    os                 = $OS
+    ip_address         = $IP
+    username           = $Username
+    agent_version      = $AgentVersion
+    device_type        = $DeviceType
+    firewall_products  = $fwProductsForJson
+    antivirus_products = $avProductsForJson
 }
 
 # Phase 3: optional fields

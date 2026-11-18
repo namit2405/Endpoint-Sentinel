@@ -542,7 +542,11 @@ try {
 
 $ErrorActionPreference = "SilentlyContinue"
 New-Item -ItemType Directory -Path "C:\ProgramData\EndpointAgent\Logs" -Force | Out-Null
-Start-Transcript -Path "C:\ProgramData\EndpointAgent\Logs\heartbeat.log" -Append | Out-Null
+# Use a rolling log (overwrite each run) to avoid transcript lock conflicts
+# when Task Scheduler fires a new instance before the previous one finishes.
+$LogFile = "C:\ProgramData\EndpointAgent\Logs\heartbeat.log"
+try { Stop-Transcript 2>$null } catch {}
+Start-Transcript -Path $LogFile -Force | Out-Null
 
 # =============================================================================
 # Load Configuration
@@ -596,6 +600,16 @@ if ($Adapter) {
     } catch { }
 }
 
+# VM detection via WMI
+$DeviceType = "physical"
+try {
+    $Model = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).Model
+    if ($Model -match "Virtual|VMware|VirtualBox|KVM|Hyper-V|QEMU|innotek") {
+        $DeviceType = "vm"
+        $WolEnabled = $false
+    }
+} catch { }
+
 # =============================================================================
 # Send heartbeat to Supabase
 # =============================================================================
@@ -606,6 +620,7 @@ Write-Host "=================================================="
 Write-Host "Hostname: $HostnameVal"
 Write-Host "IP: $IpVal"
 Write-Host "MAC: $MacVal"
+Write-Host "Device type: $DeviceType"
 
 if (-not (Test-Path $SupabaseHelper)) {
     Write-Host "x Supabase helper not found: $SupabaseHelper"
@@ -619,7 +634,8 @@ $PyArgs = @(
     "--ip", $IpVal,
     "--mac", $MacVal,
     "--username", $UsernameVal,
-    "--version", $AgentVersion
+    "--version", $AgentVersion,
+    "--device-type", $DeviceType
 )
 if ($WolEnabled) { $PyArgs += "--wol" }
 
@@ -697,7 +713,8 @@ exit 0
 
 $ErrorActionPreference = "SilentlyContinue"
 New-Item -ItemType Directory -Path "C:\ProgramData\EndpointAgent\Logs" -Force | Out-Null
-Start-Transcript -Path "C:\ProgramData\EndpointAgent\Logs\health.log" -Append | Out-Null
+try { Stop-Transcript 2>$null } catch {}
+Start-Transcript -Path "C:\ProgramData\EndpointAgent\Logs\health.log" -Force | Out-Null
 
 # =============================================================================
 # LOAD CONFIGURATION
@@ -779,12 +796,115 @@ function Collect-And-Send-Health {
         [math]::Floor(((Get-Date) - $os.LastBootUpTime).TotalSeconds)
     } else { 0 }
 
+    # FIREWALL — check Windows Security Center (covers FortiClient, Sophos, etc.)
+    # then fall back to Windows Defender Firewall profiles.
+    $firewallActive = $false
+    $fwProducts = @()
+    # Try WSC FirewallProduct (desktop Windows only — not available on Server)
+    $wscFWAvailable = $false
+    try {
+        $wscFWs = Get-CimInstance -Namespace "root\SecurityCenter2" -ClassName "FirewallProduct" -ErrorAction Stop
+        $wscFWAvailable = $true
+        foreach ($fw in $wscFWs) {
+            $state = [int]$fw.productState
+            $fwEnabled = (($state -shr 16) -band 0xFF) -eq 0x11
+            $fwUpToDate = (($state -shr 8) -band 0xFF) -ne 0x10
+            $fwProducts += @{ name = $fw.displayName; enabled = $fwEnabled; up_to_date = $fwUpToDate }
+        }
+    } catch { }
+
+    if (-not $wscFWAvailable -or $fwProducts.Count -eq 0) {
+        # WSC not available (Server OS) or returned nothing — scan known endpoint security services
+        $knownFW = @(
+            @{pattern="SophosFirewall|swi_service"; name="Sophos Firewall"},
+            @{pattern="CsFalconService"; name="CrowdStrike (network control)"},
+            @{pattern="WatchGuardEndpoint"; name="WatchGuard Endpoint Firewall"},
+            @{pattern="FortiESNAC|FortiClient"; name="FortiClient Firewall"}
+        )
+        foreach ($entry in $knownFW) {
+            try {
+                $svc = Get-Service -Name $entry.pattern -ErrorAction Stop
+                if ($svc -and $svc.Status -eq 'Running') {
+                    $fwProducts += @{ name = $entry.name; enabled = $true; up_to_date = $true }
+                }
+            } catch { }
+        }
+        # If still nothing, check Windows Defender Firewall profiles
+        if ($fwProducts.Count -eq 0) {
+            try {
+                $profiles = Get-NetFirewallProfile -ErrorAction Stop
+                $allEnabled = -not ($profiles | Where-Object { -not $_.Enabled })
+                if ($allEnabled) {
+                    $fwProducts += @{ name = "Windows Defender Firewall"; enabled = $true; up_to_date = $true }
+                }
+                # If all profiles disabled, leave fwProducts empty (genuinely no host firewall)
+            } catch { }
+        }
+    }
+
+    $firewallActive = ($fwProducts | Where-Object { $_.enabled }) -ne $null
+
+    # ANTIVIRUS — check Windows Security Center first, then known AV/EDR service scan
+    $avProducts = @()
+    $wscAVAvailable = $false
+    try {
+        $wscAVs = Get-CimInstance -Namespace "root\SecurityCenter2" -ClassName "AntiVirusProduct" -ErrorAction Stop
+        $wscAVAvailable = $true
+        foreach ($av in $wscAVs) {
+            $state = [int]$av.productState
+            $avEnabled = (($state -shr 16) -band 0xFF) -eq 0x11
+            $avUpToDate = (($state -shr 8) -band 0xFF) -ne 0x10
+            $avProducts += @{ name = $av.displayName; enabled = $avEnabled; up_to_date = $avUpToDate }
+        }
+    } catch { }
+
+    if (-not $wscAVAvailable -or $avProducts.Count -eq 0) {
+        # WSC not available (Server OS) or returned nothing — scan known AV/EDR services
+        $knownAV = @(
+            @{pattern="PandaAetherAgent|PandaAgent"; name="Panda/WatchGuard Endpoint Security"},
+            @{pattern="SophosMCS|SAVService"; name="Sophos"},
+            @{pattern="CsFalconService|CrowdStrike"; name="CrowdStrike Falcon"},
+            @{pattern="SentinelAgent"; name="SentinelOne"},
+            @{pattern="CylanceSVC"; name="Cylance"},
+            @{pattern="MsMpEng|WinDefend"; name="Windows Defender Antivirus"},
+            @{pattern="QHActiveDefense"; name="Quick Heal"},
+            @{pattern="AvastSvc|aswbIDSAgent"; name="Avast"},
+            @{pattern="AVP|KAVFS"; name="Kaspersky"},
+            @{pattern="McShield|mfefire"; name="McAfee"},
+            @{pattern="NortonSecurity|ccSvcHst"; name="Norton"},
+            @{pattern="bdagent|bdredline"; name="Bitdefender"}
+        )
+        foreach ($entry in $knownAV) {
+            try {
+                $svc = Get-Service -Name $entry.pattern -ErrorAction Stop
+                if ($svc -and $svc.Status -eq 'Running') {
+                    $avProducts += @{ name = $entry.name; enabled = $true; up_to_date = $true }
+                }
+            } catch { }
+        }
+        # Last resort: try Get-MpComputerStatus for Windows Defender
+        if ($avProducts.Count -eq 0) {
+            try {
+                $mpStatus = Get-MpComputerStatus -ErrorAction Stop
+                if ($mpStatus.AntivirusEnabled) {
+                    $avProducts += @{ name = "Windows Defender Antivirus"; enabled = $true; up_to_date = -not $mpStatus.AntivirusSignatureOutOfDate }
+                }
+            } catch { }
+        }
+    }
+
+    $antivirusActive = ($avProducts | Where-Object { $_.enabled }) -ne $null
+
+    # Serialize to JSON — handle ConvertTo-Json single-item unwrap
+    $fwJson = if ($fwProducts.Count -eq 0) { "[]" } elseif ($fwProducts.Count -eq 1) { "[$($fwProducts[0] | ConvertTo-Json -Compress -Depth 3)]" } else { $fwProducts | ConvertTo-Json -Compress -Depth 3 }
+    $avJson = if ($avProducts.Count -eq 0) { "[]" } elseif ($avProducts.Count -eq 1) { "[$($avProducts[0] | ConvertTo-Json -Compress -Depth 3)]" } else { $avProducts | ConvertTo-Json -Compress -Depth 3 }
+
     if (-not (Test-Path $SupabaseHelper)) {
         Log-Msg "x Supabase helper not found: $SupabaseHelper"
         return $false
     }
 
-    Log-Msg "Sending health to Supabase (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s)"
+    Log-Msg "Sending health to Supabase (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s, FW: ${firewallActive})"
 
     & $PythonPath $SupabaseHelper insert_health `
         --mac $macValue `
@@ -793,7 +913,10 @@ function Collect-And-Send-Health {
         --disk $diskPercent `
         --uptime $uptimeSeconds `
         --hostname $hostnameValue `
-        --ip $ipValue 2>$null
+        --ip $ipValue `
+        --firewall $(if ($firewallActive) { "true" } else { "false" }) `
+        --firewall-products $fwJson `
+        --av-products $avJson 2>$null
 
     if ($LASTEXITCODE -eq 0) {
         Log-Msg "* Health data sent"

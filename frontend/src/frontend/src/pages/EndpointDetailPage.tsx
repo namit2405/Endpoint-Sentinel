@@ -16,11 +16,13 @@ import {
   timeAgo,
   utilizationBarColor,
 } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type {
   EndpointStatus,
   OS,
   RiskFinding,
   SecurityControls,
+  SecurityProduct,
 } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
 import { apiClient } from "@/lib/api-client";
@@ -261,6 +263,48 @@ function ControlToggle({
   );
 }
 
+function ProductBadgeList({
+  products,
+  fallbackEnabled,
+  fallbackLabel,
+}: {
+  products: SecurityProduct[];
+  fallbackEnabled: boolean;
+  fallbackLabel: string;
+}) {
+  if (products && products.length > 0) {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {products.map((p) => (
+          <Badge
+            key={p.name}
+            className={cn(
+              "rounded-full text-xs",
+              p.enabled
+                ? "bg-green-500/15 text-green-600"
+                : "bg-red-500/15 text-red-500",
+            )}
+          >
+            {p.name} {p.enabled ? "\u2713" : "\u2717"}
+          </Badge>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <Badge
+      className={cn(
+        "rounded-full text-xs",
+        fallbackEnabled
+          ? "bg-success/15 text-success"
+          : "bg-destructive/15 text-destructive",
+      )}
+    >
+      {fallbackLabel}: {fallbackEnabled ? "Enabled" : "Disabled"}
+    </Badge>
+  );
+}
+
 function FindingRow({ finding }: { finding: RiskFinding }) {
   return (
     <li className="flex items-start gap-3 rounded-lg border border-border bg-background/60 p-3">
@@ -496,6 +540,32 @@ export default function EndpointDetailPage() {
             />
           ))}
         </div>
+        {((endpoint.firewall_products && endpoint.firewall_products.length > 0) ||
+          (endpoint.antivirus_products && endpoint.antivirus_products.length > 0)) && (
+          <div className="mt-4 space-y-3 border-t border-border pt-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Live Security Products
+            </p>
+            <div className="flex flex-col gap-2.5">
+              <div className="flex items-center gap-3">
+                <span className="w-20 shrink-0 text-xs text-muted-foreground">Firewall</span>
+                <ProductBadgeList
+                  products={endpoint.firewall_products ?? []}
+                  fallbackEnabled={endpoint.firewall_active}
+                  fallbackLabel="Firewall"
+                />
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="w-20 shrink-0 text-xs text-muted-foreground">Antivirus</span>
+                <ProductBadgeList
+                  products={endpoint.antivirus_products ?? []}
+                  fallbackEnabled={endpoint.antivirus_active}
+                  fallbackLabel="Antivirus"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </SectionCard>
 
       <div className="grid gap-6 lg:grid-cols-2">

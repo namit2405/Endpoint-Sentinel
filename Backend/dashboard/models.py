@@ -196,6 +196,8 @@ class EndpointStatus(models.Model):
     # ── Security status ───────────────────────────────────────────────────
     firewall_active = models.BooleanField(null=True, blank=True)
     antivirus_active = models.BooleanField(null=True, blank=True)
+    firewall_products = models.JSONField(default=list, blank=True)
+    antivirus_products = models.JSONField(default=list, blank=True)
     
     # ── Health scoring ────────────────────────────────────────────────────
     health_score = models.FloatField(default=100.0)

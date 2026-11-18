@@ -127,6 +127,18 @@ def health_monitoring(request):
         endpoint.process_count = health_data.get("process_count")
         endpoint.firewall_active = health_data.get("firewall_active")
         endpoint.antivirus_active = health_data.get("antivirus_active")
+        firewall_products = health_data.get("firewall_products") or data.get("firewall_products") or []
+        antivirus_products = health_data.get("antivirus_products") or data.get("antivirus_products") or []
+        if isinstance(firewall_products, str):
+            import json as _json; firewall_products = _json.loads(firewall_products)
+        if isinstance(antivirus_products, str):
+            import json as _json; antivirus_products = _json.loads(antivirus_products)
+        endpoint.firewall_products = firewall_products
+        endpoint.antivirus_products = antivirus_products
+        if firewall_products:
+            endpoint.firewall_active = any(p.get("enabled") for p in firewall_products)
+        if antivirus_products:
+            endpoint.antivirus_active = any(p.get("enabled") for p in antivirus_products)
         endpoint.health_score, endpoint.health_status = calculate_health_score(
             endpoint.cpu_percent,
             endpoint.memory_percent,

@@ -6,6 +6,7 @@ import type {
   HealthTrendPoint,
   OSDistribution,
   QuickAlert,
+  SecurityProduct,
 } from "./types";
 
 /**
@@ -30,9 +31,13 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
       device_type: (ep.device_type ?? "physical") as DeviceType,
       firewall_active: ep.firewall_active ?? false,
       antivirus_active: ep.antivirus_active ?? false,
+      firewall_products: (ep.firewall_products ?? []) as SecurityProduct[],
+      antivirus_products: (ep.antivirus_products ?? []) as SecurityProduct[],
       last_seen: new Date(ep.last_seen).getTime(),
       last_health_check: ep.last_health_check ? new Date(ep.last_health_check).getTime() : Date.now(),
-      connection_uptime: 0, // Backend doesn't provide this currently
+      connection_uptime: ep.connection_started_at
+        ? Math.floor((Date.now() - new Date(ep.connection_started_at).getTime()) / 1000)
+        : 0,
       audit: {
         hardware: {
           cpuCores: parseCpuCores(ep.audit?.cpu),
@@ -101,16 +106,16 @@ export function getDashboardSummary(
   try {
     const cutoff = Date.now();
     const online = endpoints.filter(
-      (e) => cutoff - e.last_seen <= 60_000,
+      (e) => cutoff - e.last_seen <= 180_000,
     ).length;
     const warning = endpoints.filter(
       (e) => {
         const age = cutoff - e.last_seen;
-        return age > 60_000 && age <= 120_000;
+        return age > 180_000 && age <= 300_000;
       },
     ).length;
     const offline = endpoints.filter(
-      (e) => cutoff - e.last_seen > 120_000,
+      (e) => cutoff - e.last_seen > 300_000,
     ).length;
     const healthy = endpoints.filter((e) => e.health_status === "healthy").length;
     const atRisk = endpoints.filter((e) => e.audit.riskLevel !== "low").length;

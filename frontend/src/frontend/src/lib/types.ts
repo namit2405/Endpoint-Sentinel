@@ -8,6 +8,12 @@ export type ConnectionStatus = "online" | "warning" | "offline";
 
 export type DeviceType = "physical" | "vm" | "container";
 
+export interface SecurityProduct {
+  name: string;
+  enabled: boolean;
+  up_to_date: boolean;
+}
+
 export interface SecurityControls {
   firewall: boolean | null;
   encryption: boolean | null;
@@ -69,6 +75,8 @@ export interface EndpointStatus {
   device_type: DeviceType;
   firewall_active: boolean;
   antivirus_active: boolean;
+  firewall_products: SecurityProduct[];
+  antivirus_products: SecurityProduct[];
   last_seen: number;
   last_health_check: number;
   connection_uptime: number;

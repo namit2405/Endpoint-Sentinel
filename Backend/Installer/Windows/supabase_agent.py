@@ -145,6 +145,7 @@ class SupabaseAgent:
         username: Optional[str] = None,
         agent_version: str = "1.2",
         wol_enabled: bool = False,
+        device_type: str = "physical",
     ) -> bool:
         """Insert heartbeat into EndpointStatus table."""
         try:
@@ -187,6 +188,36 @@ class SupabaseAgent:
             )
 
             self.cursor.execute(query, (hostname, os_normalized, ip_address, mac_address, username, agent_version, wol_enabled))
+
+            # Also upsert EndpointDevice with device_type
+            dev_query = sql.SQL(
+                """
+                INSERT INTO dashboard_endpointdevice
+                (id, hostname, os, ip_address, mac_address, is_active, device_type, created_at, updated_at)
+                VALUES (gen_random_uuid(), %s, %s, %s, %s, true, %s, NOW(), NOW())
+                ON CONFLICT (mac_address) DO UPDATE SET
+                    hostname = EXCLUDED.hostname,
+                    os = EXCLUDED.os,
+                    ip_address = EXCLUDED.ip_address,
+                    device_type = EXCLUDED.device_type,
+                    updated_at = NOW()
+                """
+            )
+            self.cursor.execute(dev_query, (hostname, os_normalized, ip_address, mac_address, device_type))
+
+            # Link EndpointStatus to EndpointDevice
+            link_query = sql.SQL(
+                """
+                UPDATE dashboard_endpointstatus es
+                SET endpoint_device_id = ed.id
+                FROM dashboard_endpointdevice ed
+                WHERE es.mac_address = ed.mac_address
+                  AND es.endpoint_device_id IS DISTINCT FROM ed.id
+                  AND es.mac_address = %s
+                """
+            )
+            self.cursor.execute(link_query, (mac_address,))
+
             self.conn.commit()
 
             if self.verbose:
@@ -209,9 +240,17 @@ class SupabaseAgent:
         uptime_seconds: int,
         hostname: Optional[str] = None,
         ip_address: Optional[str] = None,
+        firewall_active: Optional[bool] = None,
+        firewall_products: Optional[list] = None,
+        antivirus_products: Optional[list] = None,
     ) -> bool:
         """Insert health monitoring data into EndpointStatus table."""
         try:
+            if firewall_products is None:
+                firewall_products = []
+            if antivirus_products is None:
+                antivirus_products = []
+
             if self.verbose:
                 print(f"Inserting health data for {mac_address} (CPU: {cpu_percent}%, MEM: {memory_percent}%, DISK: {disk_percent}%, UPTIME: {uptime_seconds}s)", file=sys.stderr)
 
@@ -225,9 +264,23 @@ class SupabaseAgent:
                     print(f"WARNING: No EndpointStatus found for MAC {mac_address}, skipping health insert", file=sys.stderr)
                 return False
 
-            endpoint_id, endpoint_hostname, endpoint_os, firewall_active, antivirus_active = endpoint_row
+            endpoint_id, endpoint_hostname, endpoint_os, stored_firewall, antivirus_active_stored = endpoint_row
+
+            # Derive boolean flags from product lists if provided, else use explicit flag
+            if firewall_products:
+                effective_firewall = any(p.get("enabled") for p in firewall_products)
+            elif firewall_active is not None:
+                effective_firewall = firewall_active
+            else:
+                effective_firewall = stored_firewall
+
+            if antivirus_products:
+                effective_antivirus = any(p.get("enabled") for p in antivirus_products)
+            else:
+                effective_antivirus = antivirus_active_stored
+
             health_score, health_status = self.calculate_health_score(
-                cpu_percent, memory_percent, disk_percent, firewall_active, antivirus_active
+                cpu_percent, memory_percent, disk_percent, effective_firewall, effective_antivirus
             )
             if hostname is None:
                 hostname = endpoint_hostname
@@ -237,17 +290,26 @@ class SupabaseAgent:
                 result = self.cursor.fetchone()
                 ip_address = result[0] if result else "0.0.0.0"
 
-            # Update EndpointStatus with health metrics
             update_query = sql.SQL(
                 """
                 UPDATE dashboard_endpointstatus
                 SET cpu_percent = %s, memory_percent = %s, disk_percent = %s, uptime_seconds = %s,
+                    firewall_active = %s,
+                    antivirus_active = %s,
+                    firewall_products = %s,
+                    antivirus_products = %s,
                     health_score = %s, health_status = %s, last_health_check = NOW()
                 WHERE mac_address = %s
                 """
             )
-
-            self.cursor.execute(update_query, (cpu_percent, memory_percent, disk_percent, uptime_seconds, health_score, health_status, mac_address))
+            self.cursor.execute(update_query, (
+                cpu_percent, memory_percent, disk_percent, uptime_seconds,
+                effective_firewall,
+                effective_antivirus,
+                json.dumps(firewall_products),
+                json.dumps(antivirus_products),
+                health_score, health_status, mac_address,
+            ))
             self.conn.commit()
 
             if self.verbose:
@@ -443,6 +505,7 @@ def main():
     heartbeat_parser.add_argument("--username", help="Username")
     heartbeat_parser.add_argument("--version", default="1.2", help="Agent version")
     heartbeat_parser.add_argument("--wol", action="store_true", help="WOL enabled")
+    heartbeat_parser.add_argument("--device-type", default="physical", choices=["physical", "vm", "container"], help="Device type")
 
     # Health command
     health_parser = subparsers.add_parser("insert_health", help="Send health monitoring data")
@@ -453,6 +516,9 @@ def main():
     health_parser.add_argument("--uptime", type=int, required=True, help="Device uptime in seconds")
     health_parser.add_argument("--hostname", help="Hostname (optional, will use EndpointStatus)")
     health_parser.add_argument("--ip", help="IP address (optional, will use EndpointStatus)")
+    health_parser.add_argument("--firewall", choices=["true", "false"], default=None, help="Firewall active status")
+    health_parser.add_argument("--firewall-products", default="[]", help="JSON array of firewall products")
+    health_parser.add_argument("--av-products", default="[]", help="JSON array of AV products")
 
     license_parser = subparsers.add_parser("activate_license", help="Validate and activate a device")
     license_parser.add_argument("--license-key", required=True, help="License key")
@@ -486,10 +552,16 @@ def main():
                 username=args.username,
                 agent_version=args.version,
                 wol_enabled=args.wol,
+                device_type=args.device_type,
             )
             sys.exit(0 if success else 1)
 
         elif args.command == "insert_health":
+            fw = None
+            if hasattr(args, 'firewall') and args.firewall is not None:
+                fw = args.firewall == "true"
+            firewall_products = json.loads(args.firewall_products)
+            antivirus_products = json.loads(args.av_products)
             success = agent.insert_health(
                 mac_address=args.mac,
                 cpu_percent=args.cpu,
@@ -498,6 +570,9 @@ def main():
                 uptime_seconds=args.uptime,
                 hostname=args.hostname,
                 ip_address=args.ip,
+                firewall_active=fw,
+                firewall_products=firewall_products,
+                antivirus_products=antivirus_products,
             )
             sys.exit(0 if success else 1)
 
