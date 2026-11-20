@@ -82,30 +82,52 @@ def _get_token() -> str:
 
 def _map_device(raw: dict) -> dict:
     """Map a raw WatchGuard device object to the dashboard device shape."""
-    agent_status = (raw.get("agentStatus") or "").lower()
+    type_num = raw.get("type", 1)
+    device_type = "server" if type_num == 3 else "laptop" if type_num == 2 else "desktop"
 
-    if agent_status in ("active", "protected"):
-        protection_status = "protected"
-    elif agent_status in ("inactive", "unprotected"):
-        protection_status = "unprotected"
-    elif agent_status == "isolated":
-        protection_status = "isolated"
+    mac_addresses = raw.get("mac_addresses") or []
+    mac = mac_addresses[0] if mac_addresses else ""
+
+    logged_on = raw.get("logged_on_users_list") or []
+    user = logged_on[0] if logged_on else ""
+
+    enc = raw.get("encryption", 0)
+    if enc == 6:
+        encryption = "BitLocker+TPM"
+    elif enc == 2:
+        encryption = "BitLocker"
     else:
-        protection_status = "unknown"
+        encryption = "none"
+
+    if raw.get("isolation_state", 0) == 1:
+        protection_status = "isolated"
+    elif raw.get("reinstall_protection_requested") or raw.get("reinstall_agent_requested"):
+        protection_status = "error"
+    else:
+        protection_status = "protected"
 
     return {
-        "id":                raw.get("deviceId") or raw.get("id", ""),
-        "hostname":          raw.get("hostName") or raw.get("hostname", ""),
-        "device_type":       raw.get("deviceType", ""),
-        "os":                raw.get("operatingSystem") or raw.get("os", ""),
-        "ip_address":        raw.get("ipAddress") or raw.get("ip_address", ""),
-        "last_seen":         raw.get("lastSeen") or raw.get("last_seen", ""),
-        "user":              raw.get("lastLoggedInUser") or raw.get("user", ""),
-        "protection_status": protection_status,
-        "encryption":        raw.get("encryptionStatus") or raw.get("encryption", ""),
-        "site":              raw.get("siteName") or raw.get("site", ""),
-        "agent_version":     raw.get("agentVersion") or raw.get("agent_version", ""),
-        "policy":            raw.get("policyName") or raw.get("policy", ""),
+        "id":                  raw.get("device_id", ""),
+        "hostname":            raw.get("host_name", ""),
+        "device_type":         device_type,
+        "os":                  raw.get("operating_system", ""),
+        "ip_address":          raw.get("ip_address", ""),
+        "mac_address":         mac,
+        "last_seen":           raw.get("last_connection", ""),
+        "user":                user,
+        "protection_status":   protection_status,
+        "encryption":          encryption,
+        "site":                raw.get("site_name", ""),
+        "agent_version":       raw.get("agent_version", ""),
+        "policy":              raw.get("security_configuration_name", ""),
+        "domain":              raw.get("domain", ""),
+        "group_path":          raw.get("custom_group_folder_path", ""),
+        "ad_path":             raw.get("active_directory_canonical_name", ""),
+        "reboot_requested":    raw.get("reboot_requested", False),
+        "reinstall_protection": raw.get("reinstall_protection_requested", False),
+        "reinstall_agent":     raw.get("reinstall_agent_requested", False),
+        "isolation_state":     raw.get("isolation_state", 0),
+        "platform_id":         raw.get("platform_id", 1),
     }
 
 
@@ -186,8 +208,34 @@ def watchguard_devices(request: Request) -> Response:
 
     devices = [_map_device(d) for d in raw_devices]
 
+    # Fetch license counts; silently default to 0 on any failure.
+    assigned_licenses = 0
+    unassigned_licenses = 0
+    try:
+        lic_url = (
+            f"{api_base}/rest/endpoint-security/management/api/v1"
+            f"/accounts/{account_id}/licenses"
+        )
+        lic_req = urllib.request.Request(
+            url=lic_url,
+            method="GET",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "WatchGuard-API-Key": api_key,
+            },
+        )
+        with urllib.request.urlopen(lic_req, timeout=20) as lic_resp:
+            lic_data = json.loads(lic_resp.read())
+        counter = lic_data.get("product_license_counter", [{}])[0]
+        assigned_licenses = counter.get("assigned_licenses", 0)
+        unassigned_licenses = counter.get("unassigned_licenses", 0)
+    except Exception:  # noqa: BLE001
+        pass
+
     return Response({
-        "devices":   devices,
-        "total":     len(devices),
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "devices":             devices,
+        "total":               len(devices),
+        "assigned_licenses":   assigned_licenses,
+        "unassigned_licenses": unassigned_licenses,
+        "timestamp":           time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     })

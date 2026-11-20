@@ -125,21 +125,32 @@ export interface QuickAlert {
 export interface WatchGuardDevice {
   id: string;
   hostname: string;
-  device_type: string;
+  device_type: "desktop" | "laptop" | "server";
   os: string;
   ip_address: string;
+  mac_address: string;
   last_seen: string;
   user: string;
-  protection_status: "protected" | "unprotected" | "isolated" | "unknown";
-  encryption: string;
+  protection_status: "protected" | "error" | "isolated" | "unknown";
+  encryption: "none" | "BitLocker" | "BitLocker+TPM";
   site: string;
   agent_version: string;
   policy: string;
+  domain: string;
+  group_path: string;
+  ad_path: string;
+  reboot_requested: boolean;
+  reinstall_protection: boolean;
+  reinstall_agent: boolean;
+  isolation_state: number;
+  platform_id: number;
 }
 
 export interface WatchGuardDevicesResponse {
   devices: WatchGuardDevice[];
   total: number;
-  timestamp?: string;
+  assigned_licenses?: number;
+  unassigned_licenses?: number;
+  timestamp: string;
   error?: string;
 }
