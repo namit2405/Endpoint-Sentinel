@@ -9,6 +9,7 @@ import {
   Power,
   Search,
   Server,
+  ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
 
@@ -30,6 +31,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Power Management", to: "/power", icon: Power },
   { label: "Compare", to: "/compare", icon: MonitorCheck },
   { label: "Search", to: "/search", icon: Search },
+  { label: "WatchGuard", to: "/watchguard", icon: ShieldAlert },
 ];
 
 export function Sidebar() {

@@ -14,6 +14,14 @@ export interface SecurityProduct {
   up_to_date: boolean;
 }
 
+export interface DiskDetail {
+  drive: string;
+  total_gb: number;
+  used_gb: number;
+  free_gb: number;
+  percent: number;
+}
+
 export interface SecurityControls {
   firewall: boolean | null;
   encryption: boolean | null;
@@ -77,6 +85,7 @@ export interface EndpointStatus {
   antivirus_active: boolean;
   firewall_products: SecurityProduct[];
   antivirus_products: SecurityProduct[];
+  disk_details: DiskDetail[];
   last_seen: number;
   last_health_check: number;
   connection_uptime: number;
@@ -111,4 +120,26 @@ export interface QuickAlert {
   title: string;
   severity: "critical" | "warning" | "healthy";
   timestamp: number;
+}
+
+export interface WatchGuardDevice {
+  id: string;
+  hostname: string;
+  device_type: string;
+  os: string;
+  ip_address: string;
+  last_seen: string;
+  user: string;
+  protection_status: "protected" | "unprotected" | "isolated" | "unknown";
+  encryption: string;
+  site: string;
+  agent_version: string;
+  policy: string;
+}
+
+export interface WatchGuardDevicesResponse {
+  devices: WatchGuardDevice[];
+  total: number;
+  timestamp?: string;
+  error?: string;
 }

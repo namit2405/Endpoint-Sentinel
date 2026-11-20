@@ -9,6 +9,7 @@ import OverviewPage from "@/pages/OverviewPage";
 import SearchPage from "@/pages/SearchPage";
 import PowerManagementPage from "@/pages/PowerManagementPage";
 import SignInPage from "@/pages/SignInPage";
+import WatchGuardPage from "@/pages/WatchGuardPage";
 import {
   Navigate,
   RouterProvider,
@@ -47,6 +48,10 @@ const TITLES: Record<string, { title: string; subtitle: string }> = {
   "/power": {
     title: "Power Management",
     subtitle: "Wake, restart, or shut down managed endpoints",
+  },
+  "/watchguard": {
+    title: "WatchGuard",
+    subtitle: "WatchGuard Cloud endpoint protection status",
   },
 };
 
@@ -160,6 +165,12 @@ const powerRoute = createRoute({
   component: PowerManagementPage,
 });
 
+const watchguardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/watchguard",
+  component: WatchGuardPage,
+});
+
 const routeTree = rootRoute.addChildren([
   signinRoute,
   overviewRoute,
@@ -170,6 +181,7 @@ const routeTree = rootRoute.addChildren([
   compareRoute,
   searchRoute,
   powerRoute,
+  watchguardRoute,
 ]);
 
 const router = createRouter({ routeTree });

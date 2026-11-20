@@ -10,6 +10,7 @@ import type {
   HealthTrendPoint,
   OSDistribution,
   QuickAlert,
+  WatchGuardDevicesResponse,
 } from "./types";
 
 const API_BASE_URL =
@@ -337,6 +338,11 @@ class APIClient {
       `/api/endpoints/${encodeURIComponent(hostname)}/power/${action}/`,
       { method: "POST" },
     );
+  }
+
+  // ── WatchGuard Cloud ────────────────────────────────────────────────
+  getWatchGuardDevices(): Promise<WatchGuardDevicesResponse> {
+    return this.request("/api/watchguard/devices/");
   }
 }
 
