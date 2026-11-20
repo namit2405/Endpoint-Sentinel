@@ -11,8 +11,4 @@ class Migration(migrations.Migration):
             name="disk_details",
             field=models.JSONField(blank=True, default=list),
         ),
-        migrations.RunSQL(
-            sql="ALTER TABLE dashboard_endpointstatus ALTER COLUMN disk_details SET DEFAULT '[]'::jsonb;",
-            reverse_sql="ALTER TABLE dashboard_endpointstatus ALTER COLUMN disk_details DROP DEFAULT;",
-        ),
     ]
