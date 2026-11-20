@@ -102,6 +102,12 @@ jobs:
           command_timeout: 30m
           script: |
             cd /opt/endpoint-sentinel
+            # Inject WatchGuard credentials into the live env file
+            grep -q "WG_API_BASE" .env || echo "WG_API_BASE=${{ secrets.WG_API_BASE }}" >> .env
+            grep -q "WG_ACCOUNT_ID" .env || echo "WG_ACCOUNT_ID=${{ secrets.WG_ACCOUNT_ID }}" >> .env
+            grep -q "WG_ACCESS_ID" .env || echo "WG_ACCESS_ID=${{ secrets.WG_ACCESS_ID }}" >> .env
+            grep -q "WG_API_KEY" .env || echo "WG_API_KEY=${{ secrets.WG_API_KEY }}" >> .env
+            grep -q "WG_PASSWORD" .env || echo "WG_PASSWORD=${{ secrets.WG_PASSWORD }}" >> .env
             echo '${{ secrets.GHCR_READ_TOKEN }}' | docker login ghcr.io -u '${{ secrets.GHCR_USERNAME }}' --password-stdin
             docker compose -f compose.production.yml pull endpoint-sentinel
             docker compose -f compose.production.yml up -d --pull always --remove-orphans endpoint-sentinel
