@@ -2,6 +2,7 @@ import { apiClient } from "./api-client";
 import type {
   DashboardSummary,
   DeviceType,
+  DiskDetail,
   EndpointStatus,
   HealthTrendPoint,
   OSDistribution,
@@ -33,6 +34,7 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
       antivirus_active: ep.antivirus_active ?? false,
       firewall_products: (ep.firewall_products ?? []) as SecurityProduct[],
       antivirus_products: (ep.antivirus_products ?? []) as SecurityProduct[],
+      disk_details: (ep.disk_details ?? []) as DiskDetail[],
       last_seen: new Date(ep.last_seen).getTime(),
       last_health_check: ep.last_health_check ? new Date(ep.last_health_check).getTime() : Date.now(),
       connection_uptime: ep.connection_started_at

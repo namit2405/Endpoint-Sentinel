@@ -245,6 +245,7 @@ class SupabaseAgent:
         firewall_active: Optional[bool] = None,
         firewall_products: Optional[list] = None,
         antivirus_products: Optional[list] = None,
+        disk_details: Optional[list] = None,
     ) -> bool:
         """Insert health monitoring data into EndpointStatus table."""
         try:
@@ -252,6 +253,8 @@ class SupabaseAgent:
                 firewall_products = []
             if antivirus_products is None:
                 antivirus_products = []
+            if disk_details is None:
+                disk_details = []
 
             if self.verbose:
                 print(f"Inserting health data for {mac_address} (CPU: {cpu_percent}%, MEM: {memory_percent}%, DISK: {disk_percent}%, UPTIME: {uptime_seconds}s)", file=sys.stderr)
@@ -300,6 +303,7 @@ class SupabaseAgent:
                     antivirus_active = %s,
                     firewall_products = %s,
                     antivirus_products = %s,
+                    disk_details = %s,
                     health_score = %s, health_status = %s, last_health_check = NOW()
                 WHERE mac_address = %s
                 """
@@ -310,6 +314,7 @@ class SupabaseAgent:
                 effective_antivirus,
                 json.dumps(firewall_products),
                 json.dumps(antivirus_products),
+                json.dumps(disk_details),
                 health_score, health_status, mac_address,
             ))
             self.conn.commit()
@@ -521,6 +526,7 @@ def main():
     health_parser.add_argument("--firewall", choices=["true", "false"], default=None, help="Firewall active status")
     health_parser.add_argument("--firewall-products", default="[]", help="JSON array of firewall products")
     health_parser.add_argument("--av-products", default="[]", help="JSON array of AV products")
+    health_parser.add_argument("--disk-details", default="[]", help="JSON array of per-drive disk info")
 
     license_parser = subparsers.add_parser("activate_license", help="Validate and activate a device")
     license_parser.add_argument("--license-key", required=True, help="License key")
@@ -580,6 +586,7 @@ def main():
                         return []
             firewall_products = load_json_arg(args.firewall_products)
             antivirus_products = load_json_arg(args.av_products)
+            disk_details = load_json_arg(args.disk_details)
             success = agent.insert_health(
                 mac_address=args.mac,
                 cpu_percent=args.cpu,
@@ -591,6 +598,7 @@ def main():
                 firewall_active=fw,
                 firewall_products=firewall_products,
                 antivirus_products=antivirus_products,
+                disk_details=disk_details,
             )
             sys.exit(0 if success else 1)
 

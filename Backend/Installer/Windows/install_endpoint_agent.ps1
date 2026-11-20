@@ -909,17 +909,55 @@ function Collect-And-Send-Health {
         return "[" + ($items -join ",") + "]"
     }
 
+    function ConvertTo-DiskDetailsJson {
+        param([array]$drives)
+        if ($drives.Count -eq 0) { return "[]" }
+        $items = $drives | ForEach-Object {
+            $drive   = $_.drive -replace '"', '\"'
+            $total   = $_.total_gb
+            $used    = $_.used_gb
+            $free    = $_.free_gb
+            $pct     = $_.percent
+            "{`"drive`":`"$drive`",`"total_gb`":$total,`"used_gb`":$used,`"free_gb`":$free,`"percent`":$pct}"
+        }
+        return "[" + ($items -join ",") + "]"
+    }
+
+    # DISK DETAILS — per-drive breakdown
+    $diskDetails = @()
+    try {
+        $fixedDrives = Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3"
+        foreach ($drv in $fixedDrives) {
+            if ($drv.Size -gt 0) {
+                $totalGb  = [math]::Round($drv.Size / 1GB, 1)
+                $freeGb   = [math]::Round($drv.FreeSpace / 1GB, 1)
+                $usedGb   = [math]::Round(($drv.Size - $drv.FreeSpace) / 1GB, 1)
+                $pct      = [math]::Round((($drv.Size - $drv.FreeSpace) / $drv.Size) * 100, 1)
+                $diskDetails += @{
+                    drive    = $drv.DeviceID
+                    total_gb = $totalGb
+                    used_gb  = $usedGb
+                    free_gb  = $freeGb
+                    percent  = $pct
+                }
+            }
+        }
+    } catch { }
+
     $fwJson = ConvertTo-ProductJson -products $fwProducts
     $avJson = ConvertTo-ProductJson -products $avProducts
+    $diskJson = ConvertTo-DiskDetailsJson -drives $diskDetails
 
     $fwTempFile = [System.IO.Path]::GetTempFileName() + ".json"
     $avTempFile = [System.IO.Path]::GetTempFileName() + ".json"
+    $diskTempFile = [System.IO.Path]::GetTempFileName() + ".json"
     $fwJson | Set-Content $fwTempFile -Encoding UTF8 -NoNewline
     $avJson | Set-Content $avTempFile -Encoding UTF8 -NoNewline
+    $diskJson | Set-Content $diskTempFile -Encoding UTF8 -NoNewline
 
     if (-not (Test-Path $SupabaseHelper)) {
         Log-Msg "x Supabase helper not found: $SupabaseHelper"
-        Remove-Item $fwTempFile, $avTempFile -ErrorAction SilentlyContinue
+        Remove-Item $fwTempFile, $avTempFile, $diskTempFile -ErrorAction SilentlyContinue
         return $false
     }
 
@@ -935,9 +973,10 @@ function Collect-And-Send-Health {
         --ip $ipValue `
         --firewall $(if ($firewallActive) { "true" } else { "false" }) `
         --firewall-products "@$fwTempFile" `
-        --av-products "@$avTempFile" 2>$null
+        --av-products "@$avTempFile" `
+        --disk-details "@$diskTempFile" 2>$null
 
-    Remove-Item $fwTempFile, $avTempFile -ErrorAction SilentlyContinue
+    Remove-Item $fwTempFile, $avTempFile, $diskTempFile -ErrorAction SilentlyContinue
 
     if ($LASTEXITCODE -eq 0) {
         Log-Msg "* Health data sent"

@@ -139,6 +139,10 @@ def health_monitoring(request):
             endpoint.firewall_active = any(p.get("enabled") for p in firewall_products)
         if antivirus_products:
             endpoint.antivirus_active = any(p.get("enabled") for p in antivirus_products)
+        disk_details = health_data.get("disk_details") or data.get("disk_details") or []
+        if isinstance(disk_details, str):
+            import json as _json; disk_details = _json.loads(disk_details)
+        endpoint.disk_details = disk_details if isinstance(disk_details, list) else []
         endpoint.health_score, endpoint.health_status = calculate_health_score(
             endpoint.cpu_percent,
             endpoint.memory_percent,

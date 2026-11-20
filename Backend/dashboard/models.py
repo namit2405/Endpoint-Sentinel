@@ -190,6 +190,7 @@ class EndpointStatus(models.Model):
     cpu_percent = models.FloatField(null=True, blank=True)          # CPU usage %
     memory_percent = models.FloatField(null=True, blank=True)       # Memory usage %
     disk_percent = models.FloatField(null=True, blank=True)         # Disk usage %
+    disk_details = models.JSONField(default=list, blank=True)       # Per-drive breakdown [{"drive": "C:", "total_gb": 237.9, ...}]
     uptime_seconds = models.BigIntegerField(null=True, blank=True)  # Device uptime in seconds
     process_count = models.IntegerField(null=True, blank=True)      # Active processes
     

@@ -222,6 +222,7 @@ def endpoints_status(request):
             "device_type": getattr(ep.endpoint_device, "device_type", "physical") if ep.endpoint_device else "physical",
             "firewall_products": ep.firewall_products if hasattr(ep, 'firewall_products') and ep.firewall_products else [],
             "antivirus_products": ep.antivirus_products if hasattr(ep, 'antivirus_products') and ep.antivirus_products else [],
+            "disk_details": ep.disk_details if hasattr(ep, 'disk_details') and ep.disk_details else [],
         })
 
         latest_report = reports.filter(

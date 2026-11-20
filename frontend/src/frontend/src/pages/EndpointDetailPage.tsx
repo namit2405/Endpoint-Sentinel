@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -23,12 +24,15 @@ import type {
   RiskFinding,
   SecurityControls,
   SecurityProduct,
+  DiskDetail,
 } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
 import { apiClient } from "@/lib/api-client";
 import { useParams } from "@tanstack/react-router";
 import {
   Cpu,
+  ChevronDown,
+  ChevronUp,
   Download,
   FileText,
   HardDrive,
@@ -374,6 +378,7 @@ export default function EndpointDetailPage() {
   }
 
   const { audit } = endpoint;
+  const [diskExpanded, setDiskExpanded] = useState(false);
   const history = audit.history.map((report, index) => ({
     date: report.reportDate,
     key: (report.s3ObjectKey || `Report #${report.reportId}`).split("?")[0],
@@ -472,20 +477,54 @@ export default function EndpointDetailPage() {
             />
           </dl>
           <div className="mt-4">
-            <div className="mb-1.5 flex items-center justify-between text-sm">
+            <button
+              type="button"
+              className="mb-1.5 flex w-full items-center justify-between text-sm"
+              onClick={() => setDiskExpanded((v) => !v)}
+              aria-expanded={diskExpanded}
+            >
               <span className="flex items-center gap-1.5 text-muted-foreground">
                 <HardDrive className="size-4" aria-hidden="true" />
                 Disk usage
               </span>
-              <span className="font-mono font-medium text-foreground">
-                {formatPercent(audit.hardware.diskPercent)}
+              <span className="flex items-center gap-2">
+                <span className="font-mono font-medium text-foreground">
+                  {formatPercent(audit.hardware.diskPercent)}
+                </span>
+                {endpoint.disk_details && endpoint.disk_details.length > 0 && (
+                  diskExpanded
+                    ? <ChevronUp className="size-3.5 text-muted-foreground" />
+                    : <ChevronDown className="size-3.5 text-muted-foreground" />
+                )}
               </span>
-            </div>
+            </button>
             <Progress
               value={audit.hardware.diskPercent}
               indicatorClassName={utilizationBarColor(audit.hardware.diskPercent)}
               aria-label={`Disk usage ${formatPercent(audit.hardware.diskPercent)}`}
             />
+            {diskExpanded && endpoint.disk_details && endpoint.disk_details.length > 0 && (
+              <div className="mt-3 space-y-2" data-ocid="endpoint_detail.disk_breakdown">
+                {endpoint.disk_details.map((d: DiskDetail) => (
+                  <div key={d.drive} className="rounded-md border border-border bg-background/60 p-3">
+                    <div className="mb-1.5 flex items-center justify-between text-xs">
+                      <span className="font-mono font-semibold text-foreground">{d.drive}</span>
+                      <span className="text-muted-foreground">
+                        {d.used_gb} GB / {d.total_gb} GB
+                        <span className="ml-1.5 font-mono font-medium text-foreground">
+                          ({d.percent}%)
+                        </span>
+                      </span>
+                    </div>
+                    <Progress
+                      value={d.percent}
+                      indicatorClassName={utilizationBarColor(d.percent)}
+                      aria-label={`${d.drive} disk usage ${d.percent}%`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </SectionCard>
 
@@ -540,32 +579,63 @@ export default function EndpointDetailPage() {
             />
           ))}
         </div>
-        {((endpoint.firewall_products && endpoint.firewall_products.length > 0) ||
-          (endpoint.antivirus_products && endpoint.antivirus_products.length > 0)) && (
-          <div className="mt-4 space-y-3 border-t border-border pt-4">
+        <div className="mt-4 space-y-3 border-t border-border pt-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Live Security Products
             </p>
-            <div className="flex flex-col gap-2.5">
-              <div className="flex items-center gap-3">
-                <span className="w-20 shrink-0 text-xs text-muted-foreground">Firewall</span>
-                <ProductBadgeList
-                  products={endpoint.firewall_products ?? []}
-                  fallbackEnabled={endpoint.firewall_active}
-                  fallbackLabel="Firewall"
-                />
+            <div className="flex flex-col gap-3">
+              {/* Firewall */}
+              <div>
+                <p className="mb-1.5 text-xs text-muted-foreground">Firewall</p>
+                {(endpoint.firewall_products && endpoint.firewall_products.length > 0) ? (
+                  <div className="flex flex-col gap-1.5">
+                    {endpoint.firewall_products.map((p) => (
+                      <div key={p.name} className="flex items-center justify-between rounded-md border border-border bg-background/60 px-3 py-2">
+                        <span className="text-sm font-medium text-foreground">{p.name}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge className={cn("rounded-full text-xs", p.enabled ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive")}>
+                            {p.enabled ? "Enabled" : "Disabled"}
+                          </Badge>
+                          <Badge className={cn("rounded-full text-xs", p.up_to_date ? "bg-success/15 text-success" : "bg-warning/15 text-warning")}>
+                            {p.up_to_date ? "Up to date" : "Outdated"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Badge className={cn("rounded-full text-xs", endpoint.firewall_active ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive")}>
+                    {endpoint.firewall_active ? "Enabled" : "Disabled"}
+                  </Badge>
+                )}
               </div>
-              <div className="flex items-center gap-3">
-                <span className="w-20 shrink-0 text-xs text-muted-foreground">Antivirus</span>
-                <ProductBadgeList
-                  products={endpoint.antivirus_products ?? []}
-                  fallbackEnabled={endpoint.antivirus_active}
-                  fallbackLabel="Antivirus"
-                />
+              {/* Antivirus */}
+              <div>
+                <p className="mb-1.5 text-xs text-muted-foreground">Antivirus</p>
+                {(endpoint.antivirus_products && endpoint.antivirus_products.length > 0) ? (
+                  <div className="flex flex-col gap-1.5">
+                    {endpoint.antivirus_products.map((p) => (
+                      <div key={p.name} className="flex items-center justify-between rounded-md border border-border bg-background/60 px-3 py-2">
+                        <span className="text-sm font-medium text-foreground">{p.name}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge className={cn("rounded-full text-xs", p.enabled ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive")}>
+                            {p.enabled ? "Enabled" : "Disabled"}
+                          </Badge>
+                          <Badge className={cn("rounded-full text-xs", p.up_to_date ? "bg-success/15 text-success" : "bg-warning/15 text-warning")}>
+                            {p.up_to_date ? "Up to date" : "Outdated"}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Badge className={cn("rounded-full text-xs", endpoint.antivirus_active ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive")}>
+                    {endpoint.antivirus_active ? "Enabled" : "Disabled"}
+                  </Badge>
+                )}
               </div>
             </div>
           </div>
-        )}
       </SectionCard>
 
       <div className="grid gap-6 lg:grid-cols-2">
