@@ -57,7 +57,7 @@ function ProtectionBadge({ status }: { status: WatchGuardDevice["protection_stat
     case "protected":
       return (
         <Badge className="rounded-full border-transparent bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-          Protected
+          Licensed
         </Badge>
       );
     case "error":
@@ -316,7 +316,7 @@ export default function WatchGuardPage() {
 
         <Card className="shadow-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Protected</CardTitle>
+            <CardTitle className="text-sm font-medium">Licensed</CardTitle>
             <ShieldCheck className="size-4 text-emerald-500" aria-hidden="true" />
           </CardHeader>
           <CardContent>
@@ -327,12 +327,13 @@ export default function WatchGuardPage() {
                 {protectedCount}
               </div>
             )}
+            <p className="mt-1 text-xs text-muted-foreground">Has WG license</p>
           </CardContent>
         </Card>
 
         <Card className="shadow-subtle">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">With Errors</CardTitle>
+            <CardTitle className="text-sm font-medium">Needs Attention</CardTitle>
             <ShieldAlert className="size-4 text-destructive" aria-hidden="true" />
           </CardHeader>
           <CardContent>
@@ -341,6 +342,7 @@ export default function WatchGuardPage() {
             ) : (
               <div className="text-2xl font-bold text-destructive">{errorCount}</div>
             )}
+            <p className="mt-1 text-xs text-muted-foreground">Reinstall requested</p>
           </CardContent>
         </Card>
 
@@ -375,6 +377,23 @@ export default function WatchGuardPage() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      {/* API limitation notice */}
+      <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800/40 dark:bg-amber-900/20 dark:text-amber-300">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        <span>
+          Protection health details (errors, disabled, installing) are not available via the WatchGuard public API.
+          {" "}
+          <a
+            href="https://usa.cloud.watchguard.com/reports/endpoints_v2/summary"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-200"
+          >
+            View full protection status in WatchGuard Cloud →
+          </a>
+        </span>
       </div>
 
       {/* Filter bar */}
@@ -416,7 +435,7 @@ export default function WatchGuardPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="protected">Protected</SelectItem>
+                <SelectItem value="protected">Licensed</SelectItem>
                 <SelectItem value="error">Error</SelectItem>
                 <SelectItem value="isolated">Isolated</SelectItem>
               </SelectContent>

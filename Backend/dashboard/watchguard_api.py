@@ -226,7 +226,7 @@ def watchguard_devices(request: Request) -> Response:
         )
         with urllib.request.urlopen(lic_req, timeout=20) as lic_resp:
             lic_data = json.loads(lic_resp.read())
-        counter = lic_data.get("product_license_counter", [{}])[0]
+        counter = (lic_data.get("product_license_counter") or [{}])[0]
         assigned_licenses = counter.get("assigned_licenses", 0)
         unassigned_licenses = counter.get("unassigned_licenses", 0)
     except Exception:  # noqa: BLE001
