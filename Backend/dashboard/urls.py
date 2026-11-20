@@ -30,9 +30,12 @@ Real-Time Monitoring APIs:
   GET  /api/endpoints/<hostname>/history/   — historical metrics for one endpoint
   GET  /api/endpoints/health-history/       — health history for filtered endpoints
   POST /api/endpoints/health-history/       — agents post metric snapshots
+
+WatchGuard Cloud APIs:
+  GET  /api/watchguard/devices/      — endpoint devices from WatchGuard Cloud
 """
 from django.urls import path
-from . import views, api_views, auth_api, licensing_api, views_realtime_monitoring
+from . import views, api_views, auth_api, licensing_api, views_realtime_monitoring, watchguard_api
 
 app_name = "dashboard"
 
@@ -74,6 +77,9 @@ urlpatterns = [
     path("api/endpoints/current/",             views_realtime_monitoring.current_metrics,        name="api_current_metrics"),
     path("api/endpoints/<str:hostname>/history/", views_realtime_monitoring.historical_metrics, name="api_historical_metrics"),
     path("api/endpoints/health-history/",     views_realtime_monitoring.health_history,         name="api_health_history"),
+
+    # ── WatchGuard Cloud APIs ──────────────────────────────────────────────
+    path("api/watchguard/devices/",            watchguard_api.watchguard_devices,               name="watchguard_devices"),
 ]
 
 

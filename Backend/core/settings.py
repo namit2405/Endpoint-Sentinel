@@ -197,3 +197,10 @@ REST_FRAMEWORK = {
 # Use atomic requests to prevent cursor timeout issues with Supabase pooler
 ATOMIC_REQUESTS = True
 
+# ── WatchGuard Cloud Integration ──────────────────────────────────────────────
+WG_API_BASE    = config('WG_API_BASE',    default='')
+WG_ACCOUNT_ID  = config('WG_ACCOUNT_ID',  default='')
+WG_ACCESS_ID   = config('WG_ACCESS_ID',   default='')
+WG_PASSWORD    = config('WG_PASSWORD',    default='')
+WG_API_KEY     = config('WG_API_KEY',     default='')
+
