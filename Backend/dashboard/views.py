@@ -600,3 +600,119 @@ def power_restart(request, hostname):
                    f"Agent will execute within {settings.COMMAND_POLL_INTERVAL} seconds.",
         "command_id": cmd.id,
     })
+
+
+# ── Agent Manifest ───────────────────────────────────────────────────────────
+
+@csrf_exempt
+def agent_manifest(request):
+    """
+    GET /api/agent/manifest/
+    Headers: Authorization: Bearer <HEARTBEAT_API_KEY>
+    Returns the current agent version and download URLs for each OS/script.
+    """
+    if not _check_api_key(request):
+        return JsonResponse({"error": "Unauthorized"}, status=401)
+
+    version = getattr(settings, 'AGENT_CURRENT_VERSION', '1.4')
+
+    # Build absolute base URL so agents get a usable download URL
+    base = request.build_absolute_uri('/')[:-1]
+
+    return JsonResponse({
+        "current_version": version,
+        "scripts": {
+            "linux": {
+                "heartbeat": f"{base}/static/agents/heartbeat-agent-linux.sh",
+                "health":    f"{base}/static/agents/health-monitor-linux.sh",
+                "supabase":  f"{base}/static/agents/supabase_agent.py",
+            },
+            "windows": {
+                "heartbeat": f"{base}/static/agents/heartbeat-agent-windows.ps1",
+                "health":    f"{base}/static/agents/health-monitor-windows.ps1",
+                "supabase":  f"{base}/static/agents/supabase_agent.py",
+            },
+            "macos": {
+                "heartbeat": f"{base}/static/agents/heartbeat-agent-macos.sh",
+                "health":    f"{base}/static/agents/health-monitor-macos.sh",
+                "supabase":  f"{base}/static/agents/supabase_agent.py",
+            },
+        },
+    })
+
+
+# ── Update Scripts — single endpoint ─────────────────────────────────────────
+
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def update_scripts_action(request, hostname):
+    """
+    POST /api/endpoints/<hostname>/update-scripts/
+    Queue an update_scripts command for one endpoint.
+    """
+    try:
+        endpoint = EndpointStatus.objects.get(hostname=hostname)
+    except EndpointStatus.DoesNotExist:
+        return JsonResponse(
+            {"success": False, "message": f"Endpoint '{hostname}' not found"},
+            status=404,
+        )
+
+    if endpoint.presence == 'offline':
+        return JsonResponse(
+            {"success": False, "message": "Endpoint is offline. Command cannot be delivered."},
+            status=400,
+        )
+
+    cmd = EndpointCommand.objects.create(
+        endpoint=endpoint,
+        command='update_scripts',
+        requested_by=request.user,
+    )
+
+    return JsonResponse({
+        "success": True,
+        "message": (
+            f"Script update command queued (ID: {cmd.id}). "
+            f"Agent will execute within {settings.COMMAND_POLL_INTERVAL} seconds."
+        ),
+        "command_id": cmd.id,
+    })
+
+
+# ── Update Scripts — all online endpoints ────────────────────────────────────
+
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def update_scripts_all(request):
+    """
+    POST /api/endpoints/update-scripts/all/
+    Queue an update_scripts command for every currently online endpoint.
+    """
+    from django.utils import timezone
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(minutes=5)
+    online_endpoints = EndpointStatus.objects.filter(last_seen__gte=cutoff)
+
+    queued = []
+    for endpoint in online_endpoints:
+        cmd = EndpointCommand.objects.create(
+            endpoint=endpoint,
+            command='update_scripts',
+            requested_by=request.user,
+        )
+        queued.append({"hostname": endpoint.hostname, "command_id": cmd.id})
+
+    return JsonResponse({
+        "success": True,
+        "queued": len(queued),
+        "endpoints": queued,
+        "message": (
+            f"Script update queued for {len(queued)} online endpoint(s). "
+            f"Agents will execute within {settings.COMMAND_POLL_INTERVAL} seconds."
+        ),
+    })
+

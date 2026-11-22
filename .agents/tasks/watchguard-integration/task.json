@@ -1,0 +1,7 @@
+{
+  "task_id": "task-watchguard-integration",
+  "task_description": "Add a dedicated WatchGuard Cloud page to the Endpoint Sentinel portal: a Django proxy view that authenticates to WatchGuard Cloud and returns device data, and a React page that displays it with summary cards, filters, and a table.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002"],
+  "blocked_reason": null
+}

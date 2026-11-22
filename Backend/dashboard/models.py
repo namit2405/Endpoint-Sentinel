@@ -259,6 +259,7 @@ class EndpointCommand(models.Model):
     COMMAND_CHOICES = [
         ('shutdown', 'Shutdown'),
         ('restart', 'Restart'),
+        ('update_scripts', 'Update Scripts'),
     ]
     
     STATUS_CHOICES = [

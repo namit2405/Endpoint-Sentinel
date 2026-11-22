@@ -1,0 +1,26 @@
+{
+  "project_type": "Django REST API backend + React/Vite/TanStack Router frontend (monorepo-style, two separate directories)",
+  "language": "Python (backend), TypeScript (frontend)",
+  "build_system": "Django manage.py (backend); Vite + pnpm (frontend). Frontend lives at frontend/src/frontend/, backend at Backend/.",
+  "test_framework": "No backend unit tests for views; Django system check is used for correctness. Frontend: vitest (pnpm run test), TypeScript check: pnpm run typecheck.",
+  "build_command": "Backend: none needed for plan verification. Frontend: pnpm run build (from frontend/src/frontend/).",
+  "test_command": "Backend check: $env:ENDPOINT_SENTINEL_ENV_FILE='.env.development'; .\\venv\\Scripts\\python.exe manage.py check  (run from Backend/). Frontend typecheck: pnpm run typecheck  (run from frontend/src/frontend/).",
+  "verification_instructions": "1. From c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\Backend: Set-Location Backend; $env:ENDPOINT_SENTINEL_ENV_FILE='.env.development'; .\\venv\\Scripts\\python.exe manage.py check  — expect 'System check identified no issues (0 silenced).' 2. From c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend: pnpm run typecheck  — expect exit 0 with no errors.",
+  "snapshot_or_generated_files": null,
+  "environment_constraints": "Windows/PowerShell. Use PowerShell syntax for all shell commands. Backend venv is at Backend/venv/. Never use 'requests' library in backend — urllib.request only. Do not touch existing dashboard/endpoint pages.",
+  "contribution_requirements": "Follow existing code patterns exactly. Do not modify existing views, routes, or sidebar items — only add new ones. Use TokenAuthentication + IsAuthenticated on all new API views.",
+  "key_patterns": "Backend views: @api_view(['GET']) + @authentication_classes([TokenAuthentication]) + @permission_classes([IsAuthenticated]) + return Response({...}). Settings: config('KEY', default='') via python-decouple. URLs: added to dashboard/urls.py with path(...) entries. Frontend routes: createRoute({getParentRoute: () => rootRoute, path: '/...', component: Page}) assembled into rootRoute.addChildren([...]). Sidebar: NAV_ITEMS array of {label, to, icon}. API calls: this.request('/api/...') inside APIClient class. Types: interfaces exported from lib/types.ts.",
+  "relevant_files": [
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\Backend\\core\\settings.py",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\Backend\\dashboard\\urls.py",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\Backend\\dashboard\\api_views.py",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend\\src\\App.tsx",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend\\src\\components\\Sidebar.tsx",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend\\src\\lib\\api-client.ts",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend\\src\\lib\\types.ts",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend\\src\\pages\\InventoryPage.tsx",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend\\src\\pages\\LiveStatusPage.tsx",
+    "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend\\src\\lib\\format.ts"
+  ],
+  "directory_structure": "Backend/ — Django project root with manage.py, venv/, core/ (settings.py, urls.py), dashboard/ (api_views.py, urls.py, models.py, views.py, auth_api.py, licensing_api.py, views_realtime_monitoring.py). frontend/src/frontend/ — Vite/React app with src/pages/, src/components/ (Sidebar.tsx, Layout.tsx), src/lib/ (api-client.ts, types.ts, format.ts, auth.ts, useAuth.ts, useEndpoints.ts). .agents/tasks/ — plan and FEAT artifact files (outside the worktree for commits)."
+}

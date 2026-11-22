@@ -707,6 +707,62 @@ while IFS=$'\t' read -r COMMAND_ID COMMAND_TYPE; do
                 "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status failed --message "Shutdown failed" >/dev/null 2>&1
             fi
             ;;
+        update_scripts)
+            # ----------------------------------------------------------------
+            # Self-update: download new scripts from server manifest, replace
+            # the installed files, then exit so the timer fires the new version
+            # ----------------------------------------------------------------
+            MANIFEST_URL="${LOCAL_BASE_URL:-http://192.168.8.10:8000}/api/agent/manifest/"
+            MANIFEST=$(curl -s --max-time 15 \
+                -H "Authorization: Bearer ${HEARTBEAT_API_KEY:-}" \
+                "$MANIFEST_URL" 2>/dev/null || echo "")
+
+            if [ -z "$MANIFEST" ]; then
+                "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status failed --message "Could not fetch manifest" >/dev/null 2>&1
+            else
+                SERVER_VERSION=$(echo "$MANIFEST" | "$PYTHON_BIN" -c 'import json,sys; d=json.load(sys.stdin); print(d.get("current_version",""))' 2>/dev/null || echo "")
+                HB_URL=$(echo "$MANIFEST" | "$PYTHON_BIN" -c 'import json,sys; d=json.load(sys.stdin); print(d["scripts"]["linux"]["heartbeat"])' 2>/dev/null || echo "")
+                HEALTH_URL=$(echo "$MANIFEST" | "$PYTHON_BIN" -c 'import json,sys; d=json.load(sys.stdin); print(d["scripts"]["linux"]["health"])' 2>/dev/null || echo "")
+                SUPABASE_URL=$(echo "$MANIFEST" | "$PYTHON_BIN" -c 'import json,sys; d=json.load(sys.stdin); print(d["scripts"]["linux"]["supabase"])' 2>/dev/null || echo "")
+
+                TMPDIR_UPDATE=$(mktemp -d)
+                UPDATE_OK=true
+                UPDATE_MSG=""
+
+                for PAIR in "heartbeat:$HB_URL:${AGENT_SCRIPT}" \
+                            "health:$HEALTH_URL:${HEALTH_AGENT_SCRIPT:-${AGENT_DIR}/health-monitor-agent.sh}" \
+                            "supabase:$SUPABASE_URL:${SUPABASE_HELPER}"; do
+                    LABEL=$(echo "$PAIR" | cut -d: -f1)
+                    URL=$(echo "$PAIR" | cut -d: -f2)
+                    DEST=$(echo "$PAIR" | cut -d: -f3)
+                    TMP_FILE="${TMPDIR_UPDATE}/${LABEL}"
+                    if [ -n "$URL" ]; then
+                        curl -s --max-time 30 \
+                            -H "Authorization: Bearer ${HEARTBEAT_API_KEY:-}" \
+                            -o "$TMP_FILE" "$URL" 2>/dev/null
+                        if [ -s "$TMP_FILE" ]; then
+                            mv "$TMP_FILE" "$DEST" && chmod 755 "$DEST"
+                            echo "✓ Updated $LABEL"
+                        else
+                            UPDATE_OK=false
+                            UPDATE_MSG="$UPDATE_MSG Failed to download $LABEL."
+                        fi
+                    fi
+                done
+
+                rm -rf "$TMPDIR_UPDATE"
+
+                if [ "$UPDATE_OK" = "true" ]; then
+                    "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status success \
+                        --message "Scripts updated to version ${SERVER_VERSION}" >/dev/null 2>&1
+                    echo "✓ Scripts updated to version ${SERVER_VERSION} — exiting for reload"
+                    exit 0
+                else
+                    "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status failed \
+                        --message "Partial update:${UPDATE_MSG}" >/dev/null 2>&1
+                fi
+            fi
+            ;;
         *)
             "$PYTHON_BIN" "$SUPABASE_HELPER" complete_command --id "$COMMAND_ID" --status failed --message "Unsupported command: $COMMAND_TYPE" >/dev/null 2>&1
             ;;

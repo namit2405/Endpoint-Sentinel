@@ -73,6 +73,11 @@ urlpatterns = [
     path("api/endpoints/<str:hostname>/power/shutdown/", views.power_shutdown,    name="api_power_shutdown"),
     path("api/endpoints/<str:hostname>/power/restart/",  views.power_restart,     name="api_power_restart"),
 
+    # ── Script Update APIs ─────────────────────────────────────────────────
+    path("api/agent/manifest/",                              views.agent_manifest,          name="api_agent_manifest"),
+    path("api/endpoints/update-scripts/all/",                views.update_scripts_all,      name="api_update_scripts_all"),
+    path("api/endpoints/<str:hostname>/update-scripts/",     views.update_scripts_action,   name="api_update_scripts"),
+
     # ── Real-Time Monitoring APIs ──────────────────────────────────────────
     path("api/endpoints/current/",             views_realtime_monitoring.current_metrics,        name="api_current_metrics"),
     path("api/endpoints/<str:hostname>/history/", views_realtime_monitoring.historical_metrics, name="api_historical_metrics"),

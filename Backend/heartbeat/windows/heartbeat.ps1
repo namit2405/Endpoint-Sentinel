@@ -234,6 +234,43 @@ try {
                     $ResultMsg = "Restart failed: $_"
                 }
             }
+            "update_scripts" {
+                $BaseUrl = $env:LOCAL_BASE_URL
+                if (-not $BaseUrl) { $BaseUrl = "http://192.168.8.10:8000" }
+                $ManifestUrl = "$BaseUrl/api/agent/manifest/"
+                try {
+                    $Manifest = Invoke-RestMethod -Uri $ManifestUrl -Method GET `
+                        -Headers @{ Authorization = "Bearer $ApiKey" } `
+                        -TimeoutSec 15 -ErrorAction Stop
+                    $ServerVersion = $Manifest.current_version
+                    $Scripts = $Manifest.scripts.windows
+                    $AgentDir2 = "C:\Program Files\EndpointAgent"
+                    $TempDir = Join-Path $env:TEMP "EndpointAgentUpdate"
+                    New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+                    $UpdateOk = $true; $UpdateMsg = ""
+                    $FileMap = @{
+                        "heartbeat" = @{ Url = $Scripts.heartbeat; Dest = "$AgentDir2\heartbeat-agent.ps1" }
+                        "health"    = @{ Url = $Scripts.health;    Dest = "$AgentDir2\health-monitor-agent.ps1" }
+                        "supabase"  = @{ Url = $Scripts.supabase;  Dest = "$AgentDir2\supabase_agent.py" }
+                    }
+                    foreach ($K in $FileMap.Keys) {
+                        $U = $FileMap[$K].Url; $D = $FileMap[$K].Dest; $T = Join-Path $TempDir $K
+                        if ($U) {
+                            try {
+                                Invoke-WebRequest -Uri $U -OutFile $T `
+                                    -Headers @{ Authorization = "Bearer $ApiKey" } `
+                                    -TimeoutSec 30 -ErrorAction Stop
+                                if ((Get-Item $T -ErrorAction SilentlyContinue).Length -gt 0) {
+                                    Move-Item -Path $T -Destination $D -Force
+                                } else { $UpdateOk = $false; $UpdateMsg += " Empty: $K." }
+                            } catch { $UpdateOk = $false; $UpdateMsg += " Fail $K: $_" }
+                        }
+                    }
+                    Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+                    if ($UpdateOk) { $Success = $true; $ResultMsg = "Scripts updated to version $ServerVersion" }
+                    else { $ResultMsg = "Partial update: $UpdateMsg" }
+                } catch { $ResultMsg = "Manifest fetch failed: $_" }
+            }
             default {
                 $ResultMsg = "Unknown command: $CmdType"
             }

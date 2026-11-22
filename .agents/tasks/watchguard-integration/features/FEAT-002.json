@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "React frontend: add WatchGuardDevice types, API client method, WatchGuardPage component, route, and sidebar nav item. Five files in dependency order: types.ts → api-client.ts → WatchGuardPage.tsx (new) → App.tsx → Sidebar.tsx. Independent of FEAT-001 at the code level (the API endpoint need not exist for TypeScript to compile), but FEAT-001 should be done first so the full feature works end-to-end.",
+  "status": "completed",
+  "steps": [
+    "1. In frontend/src/frontend/src/lib/types.ts, append at the end: export interface WatchGuardDevice { id: string; hostname: string; device_type: string; os: string; ip_address: string; last_seen: string; user: string; protection_status: 'protected' | 'unprotected' | 'isolated' | 'unknown'; encryption: string; site: string; agent_version: string; policy: string; } and export interface WatchGuardDevicesResponse { devices: WatchGuardDevice[]; total: number; timestamp?: string; error?: string; }",
+    "2. In frontend/src/frontend/src/lib/api-client.ts: (a) add WatchGuardDevicesResponse to the import from './types'; (b) add method getWatchGuardDevices(): Promise<WatchGuardDevicesResponse> { return this.request('/api/watchguard/devices/'); } inside the APIClient class before the closing brace.",
+    "3. Create frontend/src/frontend/src/pages/WatchGuardPage.tsx as a new file. The page must include: (a) four summary cards: Total Devices (Shield icon), Protected (ShieldCheck, text-success), Unprotected (ShieldX, text-destructive), Isolated (ShieldAlert, text-warning); (b) a filter bar with a search Input (placeholder 'Search hostname, IP, user…'), a device_type dropdown Select (options populated dynamically from the data), a protection_status dropdown Select (all/protected/unprotected/isolated/unknown), and a Refresh Button; (c) a Table with columns: Hostname | Device Type | OS | IP Address | Last Seen | User | Protection | Encryption | Site — Protection column shows a colored Badge via a protectionBadge() helper; (d) loading skeleton (6 rows of Skeletons) while loading=true; (e) error state with an AlertTriangle icon and the error message; (f) empty state with Shield icon and message; (g) auto-refresh every 60 s via setInterval in a useEffect. Use apiClient.getWatchGuardDevices() for data. Last Seen column: format ISO string with new Date(raw).toLocaleString(), show '—' for empty. Import AlertTriangle, RefreshCw, Search, Shield, ShieldAlert, ShieldCheck, ShieldX from lucide-react. All imports from @/components/ui/... and @/lib/... following the patterns in InventoryPage.tsx and LiveStatusPage.tsx.",
+    "4. In frontend/src/frontend/src/App.tsx: (a) add import WatchGuardPage from '@/pages/WatchGuardPage'; (b) add '/watchguard': { title: 'WatchGuard', subtitle: 'WatchGuard Cloud endpoint protection status' } to the TITLES object; (c) add const watchguardRoute = createRoute({ getParentRoute: () => rootRoute, path: '/watchguard', component: WatchGuardPage }); (d) add watchguardRoute inside the rootRoute.addChildren([...]) array.",
+    "5. In frontend/src/frontend/src/components/Sidebar.tsx: (a) add ShieldAlert to the lucide-react import alongside the existing icons; (b) append { label: 'WatchGuard', to: '/watchguard', icon: ShieldAlert } to the NAV_ITEMS array after the Search entry."
+  ],
+  "acceptance_criteria": [
+    "pnpm run typecheck exits 0 with no TypeScript errors",
+    "WatchGuardDevice and WatchGuardDevicesResponse are exported from lib/types.ts",
+    "apiClient.getWatchGuardDevices() exists and returns Promise<WatchGuardDevicesResponse>",
+    "WatchGuardPage component compiles and renders without runtime errors",
+    "Route /watchguard is registered in the TanStack Router route tree",
+    "Sidebar shows a 'WatchGuard' nav item with the ShieldAlert icon"
+  ],
+  "verification": [
+    "Run from c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\frontend\\src\\frontend: pnpm run typecheck — expect exit 0 with no errors printed"
+  ],
+  "blocked_reason": null,
+  "findings": "All five files updated/created. pnpm run typecheck exits 0 with no errors. WatchGuardDevice and WatchGuardDevicesResponse exported from types.ts; getWatchGuardDevices() added to APIClient; WatchGuardPage.tsx created with summary cards, filter bar, table, loading skeleton, error/empty states, and 60s auto-refresh; /watchguard route registered in App.tsx; ShieldAlert nav item added to Sidebar.tsx."
+}

@@ -1,0 +1,27 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "id": "dead-code-heartbeat-sh",
+      "label": "Dead code block in heartbeat.sh",
+      "description": "The Linux agent has a full duplicate of its collection and heartbeat logic after the `exit 0` on approximately line 104. It is unreachable but roughly doubles the file length and will mislead maintainers. Remove everything after the `exit 0`.",
+      "severity": "low",
+      "blocking": false
+    },
+    {
+      "id": "hardcoded-command-server-ps1",
+      "label": "Hardcoded command-server URL in heartbeat.ps1",
+      "description": "$CommandServer is set unconditionally to 'http://192.168.8.10:8000/api/agent/commands', ignoring $env:LOCAL_BASE_URL. Any deployment that changes the server address will heartbeat correctly but fail to receive commands. Derive $CommandServer from the same env-var logic used for $Server.",
+      "severity": "medium",
+      "blocking": false
+    },
+    {
+      "id": "container-filter-gap",
+      "label": "Container type absent from frontend filters",
+      "description": "DeviceType includes 'container' and the backend accepts it, but DEVICE_TYPE_OPTIONS in LiveStatusPage.tsx and InventoryPage.tsx only offer 'physical' and 'vm'. An endpoint that registers as 'container' cannot be isolated via the type filter. Add a container option or restrict the backend choices to match the UI.",
+      "severity": "low",
+      "blocking": false
+    }
+  ],
+  "reviewDoc": "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\.agents\\tasks\\vm-review.md"
+}

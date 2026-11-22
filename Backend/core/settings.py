@@ -157,6 +157,9 @@ CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', cast=Csv())
 WOL_BROADCAST_IP = config('WOL_BROADCAST_IP', default='255.255.255.255')
 WOL_PORT = config('WOL_PORT', default=9, cast=int)
 
+# Current agent version — bump this when new scripts are deployed
+AGENT_CURRENT_VERSION = config('AGENT_CURRENT_VERSION', default='1.4')
+
 # Command polling
 COMMAND_POLL_INTERVAL = config('COMMAND_POLL_INTERVAL', default=60, cast=int)
 COMMAND_EXPIRATION_SECONDS = config('COMMAND_EXPIRATION_SECONDS', default=3600, cast=int)

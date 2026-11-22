@@ -1,0 +1,10 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    "\"unknown\" protection status is unreachable — _map_device() never emits \"unknown\" but WatchGuardDevice[\"protection_status\"] still includes it as a union member and ProtectionBadge has a dead default arm for it. Either restore a fallback that emits \"unknown\" for unrecognised isolation_state values, or remove it from the union.",
+    "All non-isolated, non-reinstall devices are classified \"protected\" — the new logic drops agentStatus-based detection and uses only reinstall_protection_requested / reinstall_agent_requested as error signals. Any device in a genuinely degraded state that doesn't set those flags will show as protected. Confirm these two flags are the complete degraded-state signal set for WatchGuard Cloud, or extend the mapping.",
+    "License counter [{}][0] swallows an empty list — lic_data.get(\"product_license_counter\", [{}])[0] raises IndexError when the API returns \"product_license_counter\": [] (empty array), not a missing key. The outer except catches it silently and the card shows 0 with no indication of failure. Fix: (lic_data.get(\"product_license_counter\") or [{}])[0].",
+    "EncryptionBadge silent mismatch on unmapped values — if the backend ever emits an encryption value not in the {none, BitLocker, BitLocker+TPM} set (e.g. type 4), EncryptionBadge falls through to its catch-all and renders it as a green badge indistinguishable from a valid encrypted state. Low severity while the type union is closed, but worth adding an explicit unknown/fallback arm."
+  ],
+  "reviewDoc": "c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\.agents\\tasks\\watchguard-review.md"
+}

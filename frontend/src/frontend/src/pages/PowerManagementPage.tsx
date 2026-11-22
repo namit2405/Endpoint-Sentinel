@@ -20,7 +20,7 @@ import {
 import { apiClient } from "@/lib/api-client";
 import { connectionStatusBg } from "@/lib/format";
 import { useEndpoints } from "@/lib/useEndpoints";
-import { Power, PowerOff, RefreshCw, RotateCcw, Zap } from "lucide-react";
+import { Download, Power, PowerOff, RefreshCw, RotateCcw, Zap } from "lucide-react";
 import { useState } from "react";
 
 type Action = "on" | "shutdown" | "restart";
@@ -33,6 +33,7 @@ export default function PowerManagementPage() {
     hostname: string;
     action: Exclude<Action, "on">;
   } | null>(null);
+  const [pushAllDialogOpen, setPushAllDialogOpen] = useState(false);
 
   const runAction = async (hostname: string, action: Action) => {
     setBusy(`${hostname}:${action}`);
@@ -56,6 +57,32 @@ export default function PowerManagementPage() {
     setPendingAction({ hostname, action });
   };
 
+  const runScriptUpdate = async (hostname: string) => {
+    setBusy(`${hostname}:update_scripts`);
+    setMessage(null);
+    try {
+      const result = await apiClient.pushScriptUpdate(hostname);
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Script update failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runScriptUpdateAll = async () => {
+    setBusy("all:update_scripts");
+    setMessage(null);
+    try {
+      const result = await apiClient.pushScriptUpdateAll();
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Script update failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -64,9 +91,20 @@ export default function PowerManagementPage() {
             <CardTitle className="font-display">Endpoint Power</CardTitle>
             <CardDescription>Control only endpoints assigned to this account.</CardDescription>
           </div>
-          <Button variant="outline" size="icon" onClick={refresh} disabled={isRefreshing} aria-label="Refresh endpoints">
-            <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy === "all:update_scripts"}
+              onClick={() => setPushAllDialogOpen(true)}
+            >
+              <Download className={busy === "all:update_scripts" ? "mr-2 size-4 animate-spin" : "mr-2 size-4"} />
+              Push Update to All
+            </Button>
+            <Button variant="outline" size="icon" onClick={refresh} disabled={isRefreshing} aria-label="Refresh endpoints">
+              <RefreshCw className={isRefreshing ? "size-4 animate-spin" : "size-4"} />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {message && <p className="mb-4 rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">{message}</p>}
@@ -125,6 +163,14 @@ export default function PowerManagementPage() {
                         <Button size="sm" variant="destructive" disabled={Boolean(actionBusy)} onClick={() => requestAction(endpoint.hostname, "shutdown")}>
                           <PowerOff className="mr-2 size-4" /> Shut down
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={Boolean(actionBusy)}
+                          onClick={() => void runScriptUpdate(endpoint.hostname)}
+                        >
+                          <Download className="mr-2 size-4" /> Push Update
+                        </Button>
                       </>
                     )}
                   </div>
@@ -155,6 +201,27 @@ export default function PowerManagementPage() {
               }}
             >
               Confirm {pendingAction?.action === "shutdown" ? "shutdown" : "restart"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={pushAllDialogOpen} onOpenChange={setPushAllDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Push script update to all online endpoints?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Every currently online endpoint will receive an update_scripts command. Each agent will download the latest scripts from the server and reload within one polling interval.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setPushAllDialogOpen(false);
+                void runScriptUpdateAll();
+              }}
+            >
+              Push to all
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -183,6 +183,48 @@ echo "$CMD_RESP" | grep -o '"id":[[:space:]]*[0-9]*' | grep -o '[0-9]*' | while 
                 RESULT_MSG="Restart failed"
             fi
             ;;
+        update_scripts)
+            MANIFEST_URL="${LOCAL_BASE_URL:-http://192.168.8.10:8000}/api/agent/manifest/"
+            MANIFEST=$(curl -s --max-time 15 \
+                -H "Authorization: Bearer $API_KEY" \
+                "$MANIFEST_URL" 2>/dev/null || echo "")
+
+            if [ -z "$MANIFEST" ]; then
+                SUCCESS="false"
+                RESULT_MSG="Could not fetch manifest"
+            else
+                SERVER_VERSION=$(echo "$MANIFEST" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("current_version",""))' 2>/dev/null || echo "")
+                HB_URL=$(echo "$MANIFEST" | python3 -c 'import json,sys; print(json.load(sys.stdin)["scripts"]["linux"]["heartbeat"])' 2>/dev/null || echo "")
+                HEALTH_URL=$(echo "$MANIFEST" | python3 -c 'import json,sys; print(json.load(sys.stdin)["scripts"]["linux"]["health"])' 2>/dev/null || echo "")
+
+                TMPDIR_UPDATE=$(mktemp -d)
+                UPDATE_OK=true
+
+                for PAIR in "heartbeat:$HB_URL:/opt/EndpointAgent/heartbeat-agent.sh" \
+                            "health:$HEALTH_URL:/opt/EndpointAgent/health-monitor-agent.sh"; do
+                    LABEL=$(echo "$PAIR" | cut -d: -f1)
+                    URL=$(echo "$PAIR" | cut -d: -f2)
+                    DEST=$(echo "$PAIR" | cut -d: -f3)
+                    TMP_FILE="${TMPDIR_UPDATE}/${LABEL}"
+                    if [ -n "$URL" ]; then
+                        curl -s --max-time 30 -H "Authorization: Bearer $API_KEY" -o "$TMP_FILE" "$URL" 2>/dev/null
+                        if [ -s "$TMP_FILE" ]; then
+                            mv "$TMP_FILE" "$DEST" && chmod 755 "$DEST"
+                        else
+                            UPDATE_OK=false
+                        fi
+                    fi
+                done
+                rm -rf "$TMPDIR_UPDATE"
+
+                if [ "$UPDATE_OK" = "true" ]; then
+                    SUCCESS="true"
+                    RESULT_MSG="Scripts updated to version ${SERVER_VERSION}"
+                else
+                    RESULT_MSG="Partial update failure"
+                fi
+            fi
+            ;;
         *)
             RESULT_MSG="Unsupported command: $CMD_TYPE"
             ;;

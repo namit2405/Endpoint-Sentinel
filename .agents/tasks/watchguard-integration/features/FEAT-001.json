@@ -1,0 +1,24 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Django backend: add WatchGuard Cloud settings, proxy API view, and URL registration. Three files touched in dependency order: settings.py → watchguard_api.py (new) → urls.py.",
+  "status": "completed",
+  "steps": [
+    "1. In Backend/core/settings.py, append a new section '# ── WatchGuard Cloud Integration' at the bottom (after the ATOMIC_REQUESTS line) with five config() calls: WG_API_BASE = config('WG_API_BASE', default=''), WG_ACCOUNT_ID = config('WG_ACCOUNT_ID', default=''), WG_ACCESS_ID = config('WG_ACCESS_ID', default=''), WG_PASSWORD = config('WG_PASSWORD', default=''), WG_API_KEY = config('WG_API_KEY', default=''). All credentials are already present in Backend/.env.development.",
+    "2. Create Backend/dashboard/watchguard_api.py as a new file. The module must: (a) maintain a module-level _TOKEN_CACHE tuple[str, float] | None for the OAuth bearer token; (b) implement _get_token() that POSTs to {WG_API_BASE}/oauth/token with Authorization: Basic base64(WG_ACCESS_ID:WG_PASSWORD) and Content-Type: application/x-www-form-urlencoded body grant_type=client_credentials&scope=api-access, parses expires_in, refreshes when < 300 s remain; (c) implement _map_device(raw) that maps WatchGuard device JSON to {id, hostname, device_type, os, ip_address, last_seen, user, protection_status, encryption, site, agent_version, policy} — derive protection_status from agentStatus field ('active'/'protected' → 'protected', 'inactive'/'unprotected' → 'unprotected', 'isolated' → 'isolated', else 'unknown'); (d) implement watchguard_devices view decorated with @api_view(['GET']) + @authentication_classes([TokenAuthentication]) + @permission_classes([IsAuthenticated]) that returns {\"devices\": [...], \"total\": N, \"timestamp\": \"...\"} on success, {\"devices\": [], \"total\": 0, \"error\": \"WatchGuard not configured\"} when WG_API_BASE is empty, or HTTP 502 with error message on network/auth failure. Device list URL: {WG_API_BASE}/rest/endpoint-security/management/api/v1/accounts/{WG_ACCOUNT_ID}/devices?pageSize=200 with Bearer token and WatchGuard-API-Key header. Use urllib.request only — no requests library.",
+    "3. In Backend/dashboard/urls.py: (a) extend the 'from . import ...' line to add 'watchguard_api'; (b) append a new '# ── WatchGuard Cloud APIs' section at the end of urlpatterns with path('api/watchguard/devices/', watchguard_api.watchguard_devices, name='watchguard_devices'); (c) add a matching docstring entry at the top of the file."
+  ],
+  "acceptance_criteria": [
+    "python manage.py check exits 0 with no issues",
+    "watchguard_api module imports without error (no missing modules or syntax errors)",
+    "URL api/watchguard/devices/ is registered in the Django URL table",
+    "WG_API_BASE, WG_ACCOUNT_ID, WG_ACCESS_ID, WG_PASSWORD, WG_API_KEY are all accessible as settings attributes",
+    "watchguard_devices view returns {\"devices\": [], \"total\": 0, \"error\": \"WatchGuard not configured\"} when WG_API_BASE is empty string"
+  ],
+  "verification": [
+    "Run from c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\Backend: $env:ENDPOINT_SENTINEL_ENV_FILE='.env.development'; .\\venv\\Scripts\\python.exe manage.py check — expect 'System check identified no issues (0 silenced).'",
+    "Run from c:\\Projects\\Endpoint-Sentinel\\Endpoint-Sentinel\\Backend: $env:ENDPOINT_SENTINEL_ENV_FILE='.env.development'; .\\venv\\Scripts\\python.exe -c \"import django; import os; os.environ.setdefault('DJANGO_SETTINGS_MODULE','core.settings'); django.setup(); from dashboard import watchguard_api; print('import ok')\" — expect 'import ok'"
+  ],
+  "blocked_reason": null,
+  "findings": "Settings WG_API_BASE/WG_ACCOUNT_ID/WG_ACCESS_ID/WG_PASSWORD/WG_API_KEY added to core/settings.py after ATOMIC_REQUESTS. watchguard_api.py created with module-level token cache, _get_token() (OAuth2 client_credentials), _map_device(), and watchguard_devices view using TokenAuthentication+IsAuthenticated. URL api/watchguard/devices/ registered in dashboard/urls.py. Both verification commands pass. Next steps (frontend/page) can import from dashboard.watchguard_api and expect the shape: {id, hostname, device_type, os, ip_address, last_seen, user, protection_status, encryption, site, agent_version, policy}."
+}

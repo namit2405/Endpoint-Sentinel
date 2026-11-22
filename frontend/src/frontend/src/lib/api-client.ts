@@ -340,6 +340,24 @@ class APIClient {
     );
   }
 
+  async pushScriptUpdate(
+    hostname: string,
+  ): Promise<{ success: boolean; message: string; command_id?: number }> {
+    return this.request(
+      `/api/endpoints/${encodeURIComponent(hostname)}/update-scripts/`,
+      { method: "POST" },
+    );
+  }
+
+  async pushScriptUpdateAll(): Promise<{
+    success: boolean;
+    message: string;
+    queued: number;
+    endpoints: Array<{ hostname: string; command_id: number }>;
+  }> {
+    return this.request("/api/endpoints/update-scripts/all/", { method: "POST" });
+  }
+
   // ── WatchGuard Cloud ────────────────────────────────────────────────
   getWatchGuardDevices(): Promise<WatchGuardDevicesResponse> {
     return this.request("/api/watchguard/devices/");

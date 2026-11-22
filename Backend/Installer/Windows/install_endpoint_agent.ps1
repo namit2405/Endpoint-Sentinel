@@ -675,6 +675,54 @@ try {
         } elseif ($Command.command -eq "shutdown") {
             & $PythonPath $SupabaseHelper complete_command --id $Command.id --status success --message "Shutdown initiated" 2>$null
             Stop-Computer -Force
+        } elseif ($Command.command -eq "update_scripts") {
+            $BaseUrl = $env:LOCAL_BASE_URL
+            if (-not $BaseUrl) { $BaseUrl = "http://192.168.8.10:8000" }
+            $ManifestUrl = "$BaseUrl/api/agent/manifest/"
+            try {
+                $Manifest = Invoke-RestMethod -Uri $ManifestUrl -Method GET `
+                    -Headers @{ Authorization = "Bearer $($env:HEARTBEAT_API_KEY)" } `
+                    -TimeoutSec 15 -ErrorAction Stop
+                $ServerVersion = $Manifest.current_version
+                $Scripts = $Manifest.scripts.windows
+                $AgentDir2 = "C:\Program Files\EndpointAgent"
+                $TempDir = Join-Path $env:TEMP "EndpointAgentUpdate"
+                New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
+                $UpdateOk = $true; $UpdateMsg = ""
+                $FileMap = @{
+                    "heartbeat" = @{ Url = $Scripts.heartbeat; Dest = "$AgentDir2\heartbeat-agent.ps1" }
+                    "health"    = @{ Url = $Scripts.health;    Dest = "$AgentDir2\health-monitor-agent.ps1" }
+                    "supabase"  = @{ Url = $Scripts.supabase;  Dest = "$AgentDir2\supabase_agent.py" }
+                }
+                foreach ($Key in $FileMap.Keys) {
+                    $Url2 = $FileMap[$Key].Url; $Dest2 = $FileMap[$Key].Dest
+                    $Tmp2 = Join-Path $TempDir "$Key"
+                    if ($Url2) {
+                        try {
+                            Invoke-WebRequest -Uri $Url2 -OutFile $Tmp2 `
+                                -Headers @{ Authorization = "Bearer $($env:HEARTBEAT_API_KEY)" } `
+                                -TimeoutSec 30 -ErrorAction Stop
+                            if ((Get-Item $Tmp2 -ErrorAction SilentlyContinue).Length -gt 0) {
+                                Move-Item -Path $Tmp2 -Destination $Dest2 -Force
+                                Write-Host "* Updated $Key script"
+                            } else { $UpdateOk = $false; $UpdateMsg += " Empty: $Key." }
+                        } catch { $UpdateOk = $false; $UpdateMsg += " Fail $Key: $_" }
+                    }
+                }
+                Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+                if ($UpdateOk) {
+                    & $PythonPath $SupabaseHelper complete_command --id $Command.id --status success `
+                        --message "Scripts updated to version $ServerVersion" 2>$null
+                    Write-Host "* Scripts updated to version $ServerVersion"
+                    exit 0
+                } else {
+                    & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed `
+                        --message "Partial update:$UpdateMsg" 2>$null
+                }
+            } catch {
+                & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed `
+                    --message "Manifest fetch failed: $_" 2>$null
+            }
         } else {
             & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed --message "Unsupported command: $($Command.command)" 2>$null
         }
