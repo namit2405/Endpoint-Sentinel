@@ -341,6 +341,7 @@ function FindingRow({ finding }: { finding: RiskFinding }) {
 export default function EndpointDetailPage() {
   const { mac } = useParams({ from: "/endpoints/$mac" });
   const { endpoints } = useEndpoints();
+  const [diskExpanded, setDiskExpanded] = useState(false);
 
   const endpoint = endpoints.find(
     (e) => e.mac_address.toLowerCase() === mac.toLowerCase(),
@@ -378,7 +379,6 @@ export default function EndpointDetailPage() {
   }
 
   const { audit } = endpoint;
-  const [diskExpanded, setDiskExpanded] = useState(false);
   const history = audit.history.map((report, index) => ({
     date: report.reportDate,
     key: (report.s3ObjectKey || `Report #${report.reportId}`).split("?")[0],
