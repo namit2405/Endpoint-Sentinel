@@ -1133,8 +1133,14 @@ Log-Msg "* Health monitoring run finished"
     Write-Host "=================================================="
     Write-Host " Scheduled Task Status"
     Write-Host "=================================================="
-    Get-ScheduledTask -TaskName $HeartbeatTaskName, $HealthTaskName, $AuditTaskName |
-        Get-ScheduledTaskInfo | Format-Table TaskName, LastRunTime, LastTaskResult, NextRunTime -AutoSize
+    foreach ($taskName in @($HeartbeatTaskName, $HealthTaskName, $AuditTaskName)) {
+        try {
+            $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+            Write-Host ("{0,-30} LastRun: {1}  Result: {2}  NextRun: {3}" -f $taskName, $info.LastRunTime, $info.LastTaskResult, $info.NextRunTime)
+        } catch {
+            Write-Host "$taskName : (status unavailable)"
+        }
+    }
 
     Write-Host ""
     Write-Host "=================================================="
