@@ -706,7 +706,7 @@ try {
                                 Move-Item -Path $Tmp2 -Destination $Dest2 -Force
                                 Write-Host "* Updated $Key script"
                             } else { $UpdateOk = $false; $UpdateMsg += " Empty: $Key." }
-                        } catch { $UpdateOk = $false; $UpdateMsg += " Fail $Key: $_" }
+                        } catch { $UpdateOk = $false; $UpdateMsg += " Fail ${Key}: " + $_.Exception.Message }
                     }
                 }
                 Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -717,11 +717,11 @@ try {
                     exit 0
                 } else {
                     & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed `
-                        --message "Partial update:$UpdateMsg" 2>$null
+                        --message ("Partial update:" + $UpdateMsg) 2>$null
                 }
             } catch {
                 & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed `
-                    --message "Manifest fetch failed: $_" 2>$null
+                    --message ("Manifest fetch failed: " + $_.Exception.Message) 2>$null
             }
         } else {
             & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed --message "Unsupported command: $($Command.command)" 2>$null
