@@ -356,8 +356,8 @@ export default function EndpointDetailPage() {
   const [servicesExpanded, setServicesExpanded] = useState(false);
   const [tasksExpanded, setTasksExpanded] = useState(false);
   const [patchesExpanded, setPatchesExpanded] = useState(false);
-  const [softwareExpanded, setSoftwareExpanded] = useState(false);
   const [softwareSearch, setSoftwareSearch] = useState("");
+  const [softwarePage, setSoftwarePage] = useState(0);
   const [usersExpanded, setUsersExpanded] = useState(false);
   const [appsSearch, setAppsSearch] = useState("");
   const [appsSortKey, setAppsSortKey] = useState<keyof ProcessInfo>("cpu_percent");
@@ -415,14 +415,24 @@ export default function EndpointDetailPage() {
 
   // Software search/filter
   const allSoftware = (rawData.installed_software ?? []) as SoftwareInfo[];
+  const sortedAllSoftware = [...allSoftware].sort((a, b) =>
+    (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase()),
+  );
   const filteredSoftware = softwareSearch.trim()
-    ? allSoftware.filter(
+    ? sortedAllSoftware.filter(
         (s) =>
           s.name?.toLowerCase().includes(softwareSearch.toLowerCase()) ||
+          s.version?.toLowerCase().includes(softwareSearch.toLowerCase()) ||
           s.publisher?.toLowerCase().includes(softwareSearch.toLowerCase()),
       )
-    : allSoftware;
-  const visibleSoftware = softwareExpanded ? filteredSoftware : filteredSoftware.slice(0, 10);
+    : sortedAllSoftware;
+  const SOFTWARE_PAGE_SIZE = 25;
+  const softwarePageCount = Math.max(1, Math.ceil(filteredSoftware.length / SOFTWARE_PAGE_SIZE));
+  const softwarePageClamped = Math.min(softwarePage, softwarePageCount - 1);
+  const visibleSoftware = filteredSoftware.slice(
+    softwarePageClamped * SOFTWARE_PAGE_SIZE,
+    (softwarePageClamped + 1) * SOFTWARE_PAGE_SIZE,
+  );
 
   return (
     <div className="space-y-6">
@@ -633,11 +643,11 @@ export default function EndpointDetailPage() {
         return (
           <SectionCard
             icon={<MonitorCog className="size-4" aria-hidden="true" />}
-            title={`Running Applications · ${endpoint.process_count ?? apps.length} processes`}
+            title="Running Applications"
             description={
               updatedAgo !== null
-                ? `Updated ${updatedAgo} sec ago`
-                : "Live process data from health monitor"
+                ? `Showing user applications · ${endpoint.process_count ?? apps.length} total processes · Updated ${updatedAgo} sec ago`
+                : `Showing user applications · ${endpoint.process_count ?? apps.length} total processes`
             }
             data-ocid="endpoint_detail.running_apps"
           >
@@ -1165,19 +1175,19 @@ export default function EndpointDetailPage() {
         <SectionCard
           icon={<Package className="size-4" aria-hidden="true" />}
           title="Installed Software"
-          description="Software inventory from last audit"
+          description="Software inventory from last audit · sorted alphabetically"
           data-ocid="endpoint_detail.installed_software"
         >
           <div className="mb-3 flex items-center justify-between gap-3">
             <input
               type="search"
-              placeholder="Search by name or publisher…"
+              placeholder="Search by name, version, or publisher…"
               value={softwareSearch}
-              onChange={(e) => { setSoftwareSearch(e.target.value); setSoftwareExpanded(false); }}
+              onChange={(e) => { setSoftwareSearch(e.target.value); setSoftwarePage(0); }}
               className="flex-1 rounded-md border border-border bg-background/60 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
             <Badge className="shrink-0 rounded-full bg-muted text-muted-foreground">
-              {allSoftware.length} applications
+              {allSoftware.length} applications installed
             </Badge>
           </div>
           <div className="overflow-x-auto">
@@ -1207,18 +1217,34 @@ export default function EndpointDetailPage() {
               </tbody>
             </table>
           </div>
-          {filteredSoftware.length > 10 && (
-            <button
-              type="button"
-              onClick={() => setSoftwareExpanded((v) => !v)}
-              className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              {softwareExpanded ? (
-                <><ChevronUp className="size-3" />Show less</>
-              ) : (
-                <><ChevronDown className="size-3" />Show all {filteredSoftware.length} results</>
-              )}
-            </button>
+          {softwarePageCount > 1 && (
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                Showing {softwarePageClamped * SOFTWARE_PAGE_SIZE + 1}–
+                {Math.min((softwarePageClamped + 1) * SOFTWARE_PAGE_SIZE, filteredSoftware.length)} of {filteredSoftware.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setSoftwarePage((p) => Math.max(0, p - 1))}
+                  disabled={softwarePageClamped === 0}
+                  className="rounded px-2 py-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <ChevronUp className="size-3 -rotate-90" />
+                </button>
+                <span>
+                  Page {softwarePageClamped + 1} of {softwarePageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSoftwarePage((p) => Math.min(softwarePageCount - 1, p + 1))}
+                  disabled={softwarePageClamped >= softwarePageCount - 1}
+                  className="rounded px-2 py-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <ChevronDown className="size-3 -rotate-90" />
+                </button>
+              </div>
+            </div>
           )}
         </SectionCard>
       )}

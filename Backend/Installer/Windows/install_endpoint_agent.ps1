@@ -823,13 +823,43 @@ function Collect-And-Send-Health {
         [math]::Floor(((Get-Date) - $os.LastBootUpTime).TotalSeconds)
     } else { 0 }
 
-    # Collect top 20 processes by CPU
+    # Collect user-facing applications (filter out system processes/services)
     $processCount = 0
     $topProcesses = @()
     try {
         $allProcs = Get-Process -ErrorAction SilentlyContinue
         $processCount = $allProcs.Count
-        $topProcesses = $allProcs | Sort-Object CPU -Descending | Select-Object -First 20 | ForEach-Object {
+
+        $systemProcessNames = @(
+            'svchost','services','lsass','csrss','wininit','winlogon','smss','Registry',
+            'System','Idle','spoolsv','msdtc','WmiPrvSE','WmiApSrv','dllhost','rundll32',
+            'conhost','fontdrvhost','dwm','NisSrv','MsMpEng','SgrmBroker','SecurityHealthService',
+            'audiodg','TabTip','TabTip32','ctfmon','sihost','taskhostw','ShellExperienceHost',
+            'StartMenuExperienceHost','SearchIndexer','SearchHost','RuntimeBroker','backgroundTaskHost',
+            'ApplicationFrameHost','UserOOBEBroker','TextInputHost','splwow64','WerFault','wermgr',
+            'PerfWatson2','MpCmdRun','MpDefenderCoreService','msmpeng','nissrv'
+        )
+
+        $userApps = $allProcs | Where-Object {
+            $proc = $_
+            $name = $proc.ProcessName
+            # Skip known system processes
+            if ($systemProcessNames -contains $name) { return $false }
+            # Include if has a visible window (GUI app)
+            if ($proc.MainWindowHandle -ne [IntPtr]::Zero) { return $true }
+            # Include if path is under Program Files or Users (user-installed apps)
+            try {
+                $path = $proc.Path
+                if ($path -and (
+                    $path -like 'C:\Program Files\*' -or
+                    $path -like 'C:\Program Files (x86)\*' -or
+                    $path -like 'C:\Users\*'
+                )) { return $true }
+            } catch {}
+            return $false
+        }
+
+        $topProcesses = $userApps | Sort-Object WorkingSet64 -Descending | ForEach-Object {
             $cpuPct = 0.0
             try {
                 if ($_.CPU -and $_.StartTime) {
@@ -838,10 +868,10 @@ function Collect-And-Send-Health {
                 }
             } catch {}
             @{
-                name       = $_.ProcessName
-                pid        = $_.Id
+                name        = $_.ProcessName
+                pid         = $_.Id
                 cpu_percent = $cpuPct
-                memory_mb  = [math]::Round($_.WorkingSet64 / 1MB, 1)
+                memory_mb   = [math]::Round($_.WorkingSet64 / 1MB, 1)
             }
         }
     } catch {}
