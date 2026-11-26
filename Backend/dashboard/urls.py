@@ -16,6 +16,7 @@ Licensing APIs (for license management):
 
 Agent APIs (for endpoint agents):
   POST /api/heartbeat/               — receive heartbeat from endpoint agents
+  POST /api/agent/health-monitoring/ — receive health metrics from endpoint agents
   GET  /api/endpoints/status/        — return live presence JSON
   GET  /api/agent/commands/<hostname>/           — agent fetches pending commands
   POST /api/agent/commands/<id>/result/          — agent reports command result
@@ -35,7 +36,7 @@ WatchGuard Cloud APIs:
   GET  /api/watchguard/devices/      — endpoint devices from WatchGuard Cloud
 """
 from django.urls import path
-from . import views, api_views, auth_api, licensing_api, views_realtime_monitoring, watchguard_api
+from . import views, api_views, auth_api, licensing_api, views_realtime_monitoring, watchguard_api, views_health_monitoring
 
 app_name = "dashboard"
 
@@ -64,6 +65,7 @@ urlpatterns = [
     path("api/heartbeat/",                     views.heartbeat,                       name="api_heartbeat"),
     path("api/agent/heartbeat",                views.heartbeat,                       name="api_agent_heartbeat_compat"),
     path("api/agent/heartbeat/",               views.heartbeat,                       name="api_agent_heartbeat_compat_slash"),
+    path("api/agent/health-monitoring/",       views_health_monitoring.health_monitoring, name="api_health_monitoring"),
     path("api/endpoints/status/",              views.endpoints_status,                name="api_endpoints_status"),
     path("api/agent/commands/<str:hostname>/", views.agent_fetch_commands,            name="api_agent_fetch_commands"),
     path("api/agent/commands/<int:command_id>/result/", views.agent_report_command_result, name="api_agent_report_result"),

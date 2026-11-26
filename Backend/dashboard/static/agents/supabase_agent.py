@@ -246,6 +246,8 @@ class SupabaseAgent:
         firewall_products: Optional[list] = None,
         antivirus_products: Optional[list] = None,
         disk_details: Optional[list] = None,
+        running_apps: Optional[list] = None,
+        process_count: Optional[int] = None,
     ) -> bool:
         """Insert health monitoring data into EndpointStatus table."""
         try:
@@ -255,6 +257,8 @@ class SupabaseAgent:
                 antivirus_products = []
             if disk_details is None:
                 disk_details = []
+            if running_apps is None:
+                running_apps = []
 
             if self.verbose:
                 print(f"Inserting health data for {mac_address} (CPU: {cpu_percent}%, MEM: {memory_percent}%, DISK: {disk_percent}%, UPTIME: {uptime_seconds}s)", file=sys.stderr)
@@ -304,10 +308,14 @@ class SupabaseAgent:
                     firewall_products = %s,
                     antivirus_products = %s,
                     disk_details = %s,
+                    running_apps = %s,
+                    process_count = %s,
                     health_score = %s, health_status = %s, last_health_check = NOW()
                 WHERE mac_address = %s
                 """
             )
+            # Derive process_count: explicit arg wins, else len(running_apps)
+            effective_process_count = process_count if process_count is not None else (len(running_apps) if running_apps else None)
             self.cursor.execute(update_query, (
                 cpu_percent, memory_percent, disk_percent, uptime_seconds,
                 effective_firewall,
@@ -315,6 +323,8 @@ class SupabaseAgent:
                 json.dumps(firewall_products),
                 json.dumps(antivirus_products),
                 json.dumps(disk_details),
+                json.dumps(running_apps),
+                effective_process_count,
                 health_score, health_status, mac_address,
             ))
             self.conn.commit()
@@ -527,6 +537,8 @@ def main():
     health_parser.add_argument("--firewall-products", default="[]", help="JSON array of firewall products")
     health_parser.add_argument("--av-products", default="[]", help="JSON array of AV products")
     health_parser.add_argument("--disk-details", default="[]", help="JSON array of per-drive disk info")
+    health_parser.add_argument("--running-apps", default="[]", help="JSON array of running processes")
+    health_parser.add_argument("--process-count", type=int, default=None, help="Total process count")
 
     license_parser = subparsers.add_parser("activate_license", help="Validate and activate a device")
     license_parser.add_argument("--license-key", required=True, help="License key")
@@ -587,6 +599,7 @@ def main():
             firewall_products = load_json_arg(args.firewall_products)
             antivirus_products = load_json_arg(args.av_products)
             disk_details = load_json_arg(args.disk_details)
+            running_apps = load_json_arg(args.running_apps)
             success = agent.insert_health(
                 mac_address=args.mac,
                 cpu_percent=args.cpu,
@@ -599,6 +612,8 @@ def main():
                 firewall_products=firewall_products,
                 antivirus_products=antivirus_products,
                 disk_details=disk_details,
+                running_apps=running_apps,
+                process_count=args.process_count,
             )
             sys.exit(0 if success else 1)
 

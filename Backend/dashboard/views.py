@@ -154,6 +154,18 @@ def heartbeat(request):
     if antivirus_products:
         defaults["antivirus_active"] = any(p.get("enabled") for p in antivirus_products)
 
+    # Running apps and process count (optional, sent by newer agent versions)
+    running_apps = data.get("running_apps")
+    process_count = data.get("process_count")
+    if running_apps is not None:
+        if isinstance(running_apps, str):
+            running_apps = json.loads(running_apps)
+        defaults["running_apps"] = running_apps if isinstance(running_apps, list) else []
+        if process_count is None and running_apps:
+            process_count = len(running_apps)
+    if process_count is not None:
+        defaults["process_count"] = process_count
+
     lookup = {"mac_address": mac_address} if mac_address else {"hostname": data["hostname"]}
     EndpointStatus.objects.update_or_create(
         **lookup,
@@ -223,6 +235,8 @@ def endpoints_status(request):
             "firewall_products": ep.firewall_products if hasattr(ep, 'firewall_products') and ep.firewall_products else [],
             "antivirus_products": ep.antivirus_products if hasattr(ep, 'antivirus_products') and ep.antivirus_products else [],
             "disk_details": ep.disk_details if hasattr(ep, 'disk_details') and ep.disk_details else [],
+            "running_apps": ep.running_apps if ep.running_apps else [],
+            "process_count": ep.process_count,
         })
 
         latest_report = reports.filter(

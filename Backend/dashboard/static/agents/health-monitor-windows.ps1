@@ -7,7 +7,7 @@
 # (Windows Task Scheduler has no reliable long-running "loop with sleep"
 # equivalent to a systemd service; a short-interval task is used instead).
 #
-# Sends health data directly to Supabase PostgreSQL
+# Sends health data to Django REST API (no direct Supabase connection)
 # =============================================================================
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -94,6 +94,20 @@ function Collect-And-Send-Health {
     $uptimeSeconds = if ($os.LastBootUpTime) {
         [math]::Floor(((Get-Date) - $os.LastBootUpTime).TotalSeconds)
     } else { 0 }
+
+    # Collect top 20 processes by CPU
+    $processCount = (Get-Process -ErrorAction SilentlyContinue).Count
+    $topProcesses = Get-Process -ErrorAction SilentlyContinue |
+        Sort-Object CPU -Descending |
+        Select-Object -First 20 |
+        ForEach-Object {
+            @{
+                name        = $_.ProcessName
+                pid         = $_.Id
+                cpu_percent = [math]::Round($_.CPU / [math]::Max(1, ((Get-Date) - $_.StartTime).TotalSeconds) * 100, 1)
+                memory_mb   = [math]::Round($_.WorkingSet64 / 1MB, 1)
+            }
+        }
 
     # FIREWALL — check Windows Security Center (covers FortiClient, Sophos, etc.)
     # then fall back to Windows Defender Firewall profiles.
@@ -247,41 +261,26 @@ function Collect-And-Send-Health {
     $avJson = ConvertTo-ProductJson -products $avProducts
     $diskJson = ConvertTo-DiskDetailsJson -drives $diskDetails
 
-    $fwTempFile = [System.IO.Path]::GetTempFileName() + ".json"
-    $avTempFile = [System.IO.Path]::GetTempFileName() + ".json"
-    $diskTempFile = [System.IO.Path]::GetTempFileName() + ".json"
-    $fwJson | Set-Content $fwTempFile -Encoding UTF8 -NoNewline
-    $avJson | Set-Content $avTempFile -Encoding UTF8 -NoNewline
-    $diskJson | Set-Content $diskTempFile -Encoding UTF8 -NoNewline
+    # Build JSON payload with all health data
+    $FwProductsJson = if ($fwProducts.Count -eq 0) { '[]' } elseif ($fwProducts.Count -eq 1) { '[' + ($fwProducts[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $fwProducts | ConvertTo-Json -Compress -Depth 3 }
+    $AvProductsJson = if ($avProducts.Count -eq 0) { '[]' } elseif ($avProducts.Count -eq 1) { '[' + ($avProducts[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $avProducts | ConvertTo-Json -Compress -Depth 3 }
+    $DiskDetailsJson = if ($diskDetails.Count -eq 0) { '[]' } elseif ($diskDetails.Count -eq 1) { '[' + ($diskDetails[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $diskDetails | ConvertTo-Json -Compress -Depth 3 }
 
-    if (-not (Test-Path $SupabaseHelper)) {
-        Log-Msg "x Supabase helper not found: $SupabaseHelper"
-        Remove-Item $fwTempFile, $avTempFile, $diskTempFile -ErrorAction SilentlyContinue
-        return $false
-    }
+    $HealthPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"ip_address`":`"$ipValue`",`"cpu_percent`":$cpuPercent,`"memory_percent`":$memPercent,`"disk_percent`":$diskPercent,`"uptime_seconds`":$uptimeSeconds,`"firewall_active`":$(if($firewallActive){'true'}else{'false'}),`"firewall_products`":$FwProductsJson,`"antivirus_products`":$AvProductsJson,`"disk_details`":$DiskDetailsJson}"
 
-    Log-Msg "Sending health to Supabase (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s, FW: ${firewallActive})"
+    $ApiBase2 = $env:LOCAL_BASE_URL; if (-not $ApiBase2) { $ApiBase2 = "https://endpoint-dashboard.pntr.dev" }
+    $ApiKey2 = $env:HEARTBEAT_API_KEY; if (-not $ApiKey2) { $ApiKey2 = "a3f9c2e1b8d7" }
 
-    & $PythonPath $SupabaseHelper insert_health `
-        --mac $macValue `
-        --cpu $cpuPercent `
-        --mem $memPercent `
-        --disk $diskPercent `
-        --uptime $uptimeSeconds `
-        --hostname $hostnameValue `
-        --ip $ipValue `
-        --firewall $(if ($firewallActive) { "true" } else { "false" }) `
-        --firewall-products "@$fwTempFile" `
-        --av-products "@$avTempFile" `
-        --disk-details "@$diskTempFile" 2>$null
+    Log-Msg "Sending health to API (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s, FW: ${firewallActive}, PROCS: ${processCount})"
 
-    Remove-Item $fwTempFile, $avTempFile, $diskTempFile -ErrorAction SilentlyContinue
-
-    if ($LASTEXITCODE -eq 0) {
-        Log-Msg "* Health data sent"
+    try {
+        Invoke-RestMethod -Uri "$ApiBase2/api/agent/health-monitoring/" -Method POST `
+            -Headers @{ Authorization="Bearer $ApiKey2"; "Content-Type"="application/json" } `
+            -Body $HealthPayload -TimeoutSec 20 -ErrorAction Stop | Out-Null
+        Log-Msg "* Health data sent via API"
         return $true
-    } else {
-        Log-Msg "x Health data send failed"
+    } catch {
+        Log-Msg "x Health API failed: $($_.Exception.Message)"
         return $false
     }
 }

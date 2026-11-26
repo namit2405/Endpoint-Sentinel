@@ -55,6 +55,13 @@ export interface RawData {
 
 export type HealthStatus = "healthy" | "warning" | "critical";
 
+export interface ProcessInfo {
+  name: string;
+  pid: number;
+  cpu_percent: number;
+  memory_mb: number;
+}
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type ConnectionStatus = "online" | "warning" | "offline";
@@ -140,6 +147,8 @@ export interface EndpointStatus {
   firewall_products: SecurityProduct[];
   antivirus_products: SecurityProduct[];
   disk_details: DiskDetail[];
+  running_apps: ProcessInfo[];
+  process_count: number | null;
   last_seen: number;
   last_health_check: number;
   connection_uptime: number;

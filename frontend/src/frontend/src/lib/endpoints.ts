@@ -6,6 +6,7 @@ import type {
   EndpointStatus,
   HealthTrendPoint,
   OSDistribution,
+  ProcessInfo,
   QuickAlert,
   SecurityProduct,
 } from "./types";
@@ -35,6 +36,8 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
       firewall_products: (ep.firewall_products ?? []) as SecurityProduct[],
       antivirus_products: (ep.antivirus_products ?? []) as SecurityProduct[],
       disk_details: (ep.disk_details ?? []) as DiskDetail[],
+      running_apps: (ep.running_apps ?? []) as ProcessInfo[],
+      process_count: ep.process_count ?? null,
       last_seen: new Date(ep.last_seen).getTime(),
       last_health_check: ep.last_health_check ? new Date(ep.last_health_check).getTime() : Date.now(),
       connection_uptime: ep.connection_started_at

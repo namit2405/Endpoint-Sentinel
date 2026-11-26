@@ -31,6 +31,7 @@ import type {
   UserInfo,
   TaskInfo,
   PatchInfo,
+  ProcessInfo,
 } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
 import { apiClient } from "@/lib/api-client";
@@ -358,6 +359,9 @@ export default function EndpointDetailPage() {
   const [softwareExpanded, setSoftwareExpanded] = useState(false);
   const [softwareSearch, setSoftwareSearch] = useState("");
   const [usersExpanded, setUsersExpanded] = useState(false);
+  const [appsSearch, setAppsSearch] = useState("");
+  const [appsSortKey, setAppsSortKey] = useState<keyof ProcessInfo>("cpu_percent");
+  const [appsSortAsc, setAppsSortAsc] = useState(false);
 
   const endpoint = endpoints.find(
     (e) => e.mac_address.toLowerCase() === mac.toLowerCase(),
@@ -593,6 +597,139 @@ export default function EndpointDetailPage() {
           </dl>
         </SectionCard>
       </div>
+
+      {/* Running Applications */}
+      {(() => {
+        const apps = endpoint.running_apps ?? [];
+        const updatedAgo = endpoint.last_health_check
+          ? Math.round((Date.now() - endpoint.last_health_check) / 1000)
+          : null;
+        const filteredApps = appsSearch.trim()
+          ? apps.filter((p) => p.name.toLowerCase().includes(appsSearch.toLowerCase()))
+          : apps;
+        const sortedApps = [...filteredApps].sort((a, b) => {
+          const av = a[appsSortKey] as number | string;
+          const bv = b[appsSortKey] as number | string;
+          if (av < bv) return appsSortAsc ? -1 : 1;
+          if (av > bv) return appsSortAsc ? 1 : -1;
+          return 0;
+        });
+        const toggleSort = (key: keyof ProcessInfo) => {
+          if (appsSortKey === key) {
+            setAppsSortAsc((v) => !v);
+          } else {
+            setAppsSortKey(key);
+            setAppsSortAsc(key === "name");
+          }
+        };
+        const SortIcon = ({ col }: { col: keyof ProcessInfo }) =>
+          appsSortKey === col ? (
+            appsSortAsc ? (
+              <ChevronUp className="inline size-3" />
+            ) : (
+              <ChevronDown className="inline size-3" />
+            )
+          ) : null;
+        return (
+          <SectionCard
+            icon={<MonitorCog className="size-4" aria-hidden="true" />}
+            title={`Running Applications · ${endpoint.process_count ?? apps.length} processes`}
+            description={
+              updatedAgo !== null
+                ? `Updated ${updatedAgo} sec ago`
+                : "Live process data from health monitor"
+            }
+            data-ocid="endpoint_detail.running_apps"
+          >
+            {apps.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/60 px-4 py-10 text-center">
+                <Activity className="size-8 text-muted-foreground" aria-hidden="true" />
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  No process data available
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Health monitor update pending
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-3">
+                  <input
+                    type="search"
+                    placeholder="Filter by process name…"
+                    value={appsSearch}
+                    onChange={(e) => setAppsSearch(e.target.value)}
+                    className="w-full rounded-md border border-border bg-background/60 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th
+                          className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
+                          onClick={() => toggleSort("name")}
+                        >
+                          Process Name <SortIcon col="name" />
+                        </th>
+                        <th
+                          className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
+                          onClick={() => toggleSort("pid")}
+                        >
+                          PID <SortIcon col="pid" />
+                        </th>
+                        <th
+                          className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
+                          onClick={() => toggleSort("cpu_percent")}
+                        >
+                          CPU % <SortIcon col="cpu_percent" />
+                        </th>
+                        <th
+                          className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
+                          onClick={() => toggleSort("memory_mb")}
+                        >
+                          Memory (MB) <SortIcon col="memory_mb" />
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedApps.map((proc) => (
+                        <tr
+                          key={proc.pid}
+                          className="border-b border-border/50 last:border-0"
+                        >
+                          <td className="py-2 font-mono text-xs text-foreground">
+                            {proc.name}
+                          </td>
+                          <td className="py-2 font-mono text-xs text-muted-foreground">
+                            {proc.pid}
+                          </td>
+                          <td className="py-2 text-xs text-foreground">
+                            {proc.cpu_percent}%
+                          </td>
+                          <td className="py-2 text-xs text-foreground">
+                            {proc.memory_mb} MB
+                          </td>
+                        </tr>
+                      ))}
+                      {sortedApps.length === 0 && (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            className="py-6 text-center text-xs text-muted-foreground"
+                          >
+                            No results for "{appsSearch}"
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </SectionCard>
+        );
+      })()}
 
       {/* Security Controls */}
       <SectionCard

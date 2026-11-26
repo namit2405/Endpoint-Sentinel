@@ -6,11 +6,11 @@
 
    1. Heartbeat Agent
       - Every 1 minute (via Scheduled Task)
-      - Sends to Supabase directly (bypasses local Django API)
+      - POSTs to Django REST API (HTTP) — no direct Supabase connection
 
    2. Real-Time Health Monitoring
       - Every 2 minutes (via Scheduled Task)
-      - Sends to Supabase directly
+      - POSTs to Django REST API (HTTP)
       - Includes MAC address as endpoint identity
 
    3. Daily Windows Security Audit
@@ -21,6 +21,7 @@
  IMPORTANT:
    MAC address is the endpoint identity.
    All data linked to MAC address via EndpointStatus model.
+   supabase_agent.py is kept only for license activation.
 
  Run (elevated PowerShell):
    powershell -ExecutionPolicy Bypass -File install_endpoint_agent.ps1
@@ -430,7 +431,7 @@ function Install-Agent {
 
     @"
 # Endpoint agent configuration
-# Agents connect directly to Supabase PostgreSQL (no local API needed)
+# Agents POST to Django REST API (HTTP) — no direct Supabase connection needed
 
 REPORT_DIR=$ReportDir
 HEALTH_INTERVAL=$HealthInterval
@@ -445,7 +446,11 @@ DEVICES_USED=$DevicesUsed
 DEVICE_LIMIT=$DeviceLimit
 BACKEND_URL=$BackendUrl
 
-# Supabase PostgreSQL connection (direct, no API gateway)
+# Django REST API endpoint (replaces direct Supabase psycopg2 connection)
+LOCAL_BASE_URL=https://endpoint-dashboard.pntr.dev
+HEARTBEAT_API_KEY=a3f9c2e1b8d7
+
+# Supabase PostgreSQL connection (kept for license activation only)
 SUPABASE_HOST=$SupabaseHost
 SUPABASE_PORT=$SupabasePort
 SUPABASE_DB=$SupabaseDb
@@ -536,8 +541,9 @@ try {
 # Runs every 1 minute via Task Scheduler.
 #
 # Behavior:
-#   - Sends heartbeat directly to Supabase PostgreSQL
+#   - Sends heartbeat to Django REST API
 #   - Updates EndpointStatus via MAC address
+#   - License activation still uses supabase_agent.py directly
 # =============================================================================
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -611,39 +617,40 @@ try {
 } catch { }
 
 # =============================================================================
-# Send heartbeat to Supabase
+# Send heartbeat to Django REST API
 # =============================================================================
 
 Write-Host "=================================================="
-Write-Host " Sending heartbeat to Supabase"
+Write-Host " Sending heartbeat to Django API"
 Write-Host "=================================================="
 Write-Host "Hostname: $HostnameVal"
 Write-Host "IP: $IpVal"
 Write-Host "MAC: $MacVal"
 Write-Host "Device type: $DeviceType"
 
-if (-not (Test-Path $SupabaseHelper)) {
-    Write-Host "x Supabase helper not found: $SupabaseHelper"
-    exit 1
-}
+$HeartbeatJson = (@{
+    hostname      = $HostnameVal
+    os            = $OsVal
+    ip_address    = $IpVal
+    username      = $UsernameVal
+    agent_version = $AgentVersion
+    device_type   = $DeviceType
+    mac_address   = $MacVal
+    wol_enabled   = $WolEnabled
+} | ConvertTo-Json -Compress)
 
-$PyArgs = @(
-    $SupabaseHelper, "insert_heartbeat",
-    "--hostname", $HostnameVal,
-    "--os", $OsVal,
-    "--ip", $IpVal,
-    "--mac", $MacVal,
-    "--username", $UsernameVal,
-    "--version", $AgentVersion,
-    "--device-type", $DeviceType
-)
-if ($WolEnabled) { $PyArgs += "--wol" }
+$ApiBase = $env:LOCAL_BASE_URL
+if (-not $ApiBase) { $ApiBase = "https://endpoint-dashboard.pntr.dev" }
+$ApiKey = $env:HEARTBEAT_API_KEY
+if (-not $ApiKey) { $ApiKey = "a3f9c2e1b8d7" }
 
-& $PythonPath @PyArgs
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "* Heartbeat sent to Supabase successfully"
-} else {
-    Write-Host "x Heartbeat failed"
+try {
+    Invoke-RestMethod -Uri "$ApiBase/api/heartbeat/" -Method POST `
+        -Headers @{ Authorization = "Bearer $ApiKey"; "Content-Type" = "application/json" } `
+        -Body $HeartbeatJson -TimeoutSec 15 -ErrorAction Stop | Out-Null
+    Write-Host "* Heartbeat sent to API successfully"
+} catch {
+    Write-Host "x Heartbeat failed: $($_.Exception.Message)"
     exit 1
 }
 
@@ -663,73 +670,45 @@ if ($env:LICENSE_KEY) {
 }
 
 # =============================================================================
-# Fetch and execute pending power commands
+# Fetch and execute pending commands from Django API
 # =============================================================================
 
 try {
-    $PendingCommands = & $PythonPath $SupabaseHelper poll_commands --mac $MacVal 2>$null | ConvertFrom-Json
-    foreach ($Command in @($PendingCommands)) {
-        if ($Command.command -eq "restart") {
-            & $PythonPath $SupabaseHelper complete_command --id $Command.id --status success --message "Restart initiated" 2>$null
-            Restart-Computer -Force
-        } elseif ($Command.command -eq "shutdown") {
-            & $PythonPath $SupabaseHelper complete_command --id $Command.id --status success --message "Shutdown initiated" 2>$null
-            Stop-Computer -Force
-        } elseif ($Command.command -eq "update_scripts") {
-            $BaseUrl = $env:LOCAL_BASE_URL
-            if (-not $BaseUrl) { $BaseUrl = "http://192.168.8.10:8000" }
-            $ManifestUrl = "$BaseUrl/api/agent/manifest/"
-            try {
-                $Manifest = Invoke-RestMethod -Uri $ManifestUrl -Method GET `
-                    -Headers @{ Authorization = "Bearer $($env:HEARTBEAT_API_KEY)" } `
-                    -TimeoutSec 15 -ErrorAction Stop
-                $ServerVersion = $Manifest.current_version
-                $Scripts = $Manifest.scripts.windows
-                $AgentDir2 = "C:\Program Files\EndpointAgent"
-                $TempDir = Join-Path $env:TEMP "EndpointAgentUpdate"
-                New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
-                $UpdateOk = $true; $UpdateMsg = ""
-                $FileMap = @{
-                    "heartbeat" = @{ Url = $Scripts.heartbeat; Dest = "$AgentDir2\heartbeat-agent.ps1" }
-                    "health"    = @{ Url = $Scripts.health;    Dest = "$AgentDir2\health-monitor-agent.ps1" }
-                    "supabase"  = @{ Url = $Scripts.supabase;  Dest = "$AgentDir2\supabase_agent.py" }
-                }
-                foreach ($Key in $FileMap.Keys) {
-                    $Url2 = $FileMap[$Key].Url; $Dest2 = $FileMap[$Key].Dest
-                    $Tmp2 = Join-Path $TempDir "$Key"
-                    if ($Url2) {
-                        try {
-                            Invoke-WebRequest -Uri $Url2 -OutFile $Tmp2 `
-                                -Headers @{ Authorization = "Bearer $($env:HEARTBEAT_API_KEY)" } `
-                                -TimeoutSec 30 -ErrorAction Stop
-                            if ((Get-Item $Tmp2 -ErrorAction SilentlyContinue).Length -gt 0) {
-                                Move-Item -Path $Tmp2 -Destination $Dest2 -Force
-                                Write-Host "* Updated $Key script"
-                            } else { $UpdateOk = $false; $UpdateMsg += " Empty: $Key." }
-                        } catch { $UpdateOk = $false; $UpdateMsg += " Fail ${Key}: " + $_.Exception.Message }
-                    }
-                }
-                Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
-                if ($UpdateOk) {
-                    & $PythonPath $SupabaseHelper complete_command --id $Command.id --status success `
-                        --message "Scripts updated to version $ServerVersion" 2>$null
-                    Write-Host "* Scripts updated to version $ServerVersion"
-                    exit 0
-                } else {
-                    & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed `
-                        --message ("Partial update:" + $UpdateMsg) 2>$null
-                }
-            } catch {
-                & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed `
-                    --message ("Manifest fetch failed: " + $_.Exception.Message) 2>$null
+    $CmdResp = Invoke-RestMethod -Uri "$ApiBase/api/agent/commands/$HostnameVal/" -Method GET `
+        -Headers @{ Authorization = "Bearer $ApiKey" } -TimeoutSec 10 -ErrorAction Stop
+    foreach ($cmd in @($CmdResp.commands)) {
+        $CmdId = $cmd.id; $CmdType = $cmd.command
+        $Success = $false; $ResultMsg = ""
+        switch ($CmdType) {
+            "shutdown"  { try { Stop-Computer -Force; $Success=$true; $ResultMsg="Shutdown initiated" } catch { $ResultMsg=$_.Exception.Message } }
+            "restart"   { try { Restart-Computer -Force; $Success=$true; $ResultMsg="Restart initiated" } catch { $ResultMsg=$_.Exception.Message } }
+            "update_scripts" {
+                # Download manifest and update scripts
+                try {
+                    $Manifest = Invoke-RestMethod -Uri "$ApiBase/api/agent/manifest/" -Headers @{ Authorization="Bearer $ApiKey" } -TimeoutSec 15 -ErrorAction Stop
+                    $ServerVer = $Manifest.current_version
+                    if ($ServerVer -and $ServerVer -ne $AgentVersion) {
+                        $Scripts = $Manifest.scripts.windows
+                        foreach ($entry in @(
+                            @{url=$Scripts.heartbeat; dest="C:\Program Files\EndpointAgent\heartbeat-agent.ps1"},
+                            @{url=$Scripts.health;    dest="C:\Program Files\EndpointAgent\health-monitor-agent.ps1"},
+                            @{url=$Scripts.supabase;  dest="C:\Program Files\EndpointAgent\supabase_agent.py"}
+                        )) {
+                            $tmp = [IO.Path]::GetTempFileName()
+                            Invoke-WebRequest -Uri $entry.url -Headers @{Authorization="Bearer $ApiKey"} -OutFile $tmp -UseBasicParsing
+                            if ((Get-Item $tmp).Length -gt 100) { Move-Item $tmp $entry.dest -Force }
+                        }
+                        $Success=$true; $ResultMsg="Updated to $ServerVer"
+                    } else { $Success=$true; $ResultMsg="Already current" }
+                } catch { $ResultMsg=$_.Exception.Message }
             }
-        } else {
-            & $PythonPath $SupabaseHelper complete_command --id $Command.id --status failed --message "Unsupported command: $($Command.command)" 2>$null
+            default { $ResultMsg="Unknown: $CmdType" }
         }
+        $Status = if ($Success) { "success" } else { "failed" }
+        $ResultBody = (@{status=$Status; message=$ResultMsg} | ConvertTo-Json -Compress)
+        try { Invoke-RestMethod -Uri "$ApiBase/api/agent/commands/$CmdId/result/" -Method POST -Headers @{Authorization="Bearer $ApiKey"; "Content-Type"="application/json"} -Body $ResultBody -TimeoutSec 10 | Out-Null } catch {}
     }
-} catch {
-    Write-Host "Power command polling failed: $($_.Exception.Message)"
-}
+} catch { }
 
 exit 0
 '@
@@ -756,7 +735,7 @@ exit 0
 # (Windows Task Scheduler has no reliable long-running "loop with sleep"
 # equivalent to a systemd service; a short-interval task is used instead).
 #
-# Sends health data directly to Supabase PostgreSQL
+# Sends health data to Django REST API (no direct Supabase connection)
 # =============================================================================
 
 $ErrorActionPreference = "SilentlyContinue"
@@ -843,6 +822,20 @@ function Collect-And-Send-Health {
     $uptimeSeconds = if ($os.LastBootUpTime) {
         [math]::Floor(((Get-Date) - $os.LastBootUpTime).TotalSeconds)
     } else { 0 }
+
+    # Collect top 20 processes by CPU
+    $processCount = (Get-Process -ErrorAction SilentlyContinue).Count
+    $topProcesses = Get-Process -ErrorAction SilentlyContinue |
+        Sort-Object CPU -Descending |
+        Select-Object -First 20 |
+        ForEach-Object {
+            @{
+                name        = $_.ProcessName
+                pid         = $_.Id
+                cpu_percent = [math]::Round($_.CPU / [math]::Max(1, ((Get-Date) - $_.StartTime).TotalSeconds) * 100, 1)
+                memory_mb   = [math]::Round($_.WorkingSet64 / 1MB, 1)
+            }
+        }
 
     # FIREWALL — check Windows Security Center (covers FortiClient, Sophos, etc.)
     # then fall back to Windows Defender Firewall profiles.
@@ -996,41 +989,26 @@ function Collect-And-Send-Health {
     $avJson = ConvertTo-ProductJson -products $avProducts
     $diskJson = ConvertTo-DiskDetailsJson -drives $diskDetails
 
-    $fwTempFile = [System.IO.Path]::GetTempFileName() + ".json"
-    $avTempFile = [System.IO.Path]::GetTempFileName() + ".json"
-    $diskTempFile = [System.IO.Path]::GetTempFileName() + ".json"
-    $fwJson | Set-Content $fwTempFile -Encoding UTF8 -NoNewline
-    $avJson | Set-Content $avTempFile -Encoding UTF8 -NoNewline
-    $diskJson | Set-Content $diskTempFile -Encoding UTF8 -NoNewline
+    # Build JSON payload with all health data
+    $FwProductsJson = if ($fwProducts.Count -eq 0) { '[]' } elseif ($fwProducts.Count -eq 1) { '[' + ($fwProducts[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $fwProducts | ConvertTo-Json -Compress -Depth 3 }
+    $AvProductsJson = if ($avProducts.Count -eq 0) { '[]' } elseif ($avProducts.Count -eq 1) { '[' + ($avProducts[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $avProducts | ConvertTo-Json -Compress -Depth 3 }
+    $DiskDetailsJson = if ($diskDetails.Count -eq 0) { '[]' } elseif ($diskDetails.Count -eq 1) { '[' + ($diskDetails[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $diskDetails | ConvertTo-Json -Compress -Depth 3 }
 
-    if (-not (Test-Path $SupabaseHelper)) {
-        Log-Msg "x Supabase helper not found: $SupabaseHelper"
-        Remove-Item $fwTempFile, $avTempFile, $diskTempFile -ErrorAction SilentlyContinue
-        return $false
-    }
+    $HealthPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"ip_address`":`"$ipValue`",`"cpu_percent`":$cpuPercent,`"memory_percent`":$memPercent,`"disk_percent`":$diskPercent,`"uptime_seconds`":$uptimeSeconds,`"firewall_active`":$(if($firewallActive){'true'}else{'false'}),`"firewall_products`":$FwProductsJson,`"antivirus_products`":$AvProductsJson,`"disk_details`":$DiskDetailsJson}"
 
-    Log-Msg "Sending health to Supabase (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s, FW: ${firewallActive})"
+    $ApiBase2 = $env:LOCAL_BASE_URL; if (-not $ApiBase2) { $ApiBase2 = "https://endpoint-dashboard.pntr.dev" }
+    $ApiKey2 = $env:HEARTBEAT_API_KEY; if (-not $ApiKey2) { $ApiKey2 = "a3f9c2e1b8d7" }
 
-    & $PythonPath $SupabaseHelper insert_health `
-        --mac $macValue `
-        --cpu $cpuPercent `
-        --mem $memPercent `
-        --disk $diskPercent `
-        --uptime $uptimeSeconds `
-        --hostname $hostnameValue `
-        --ip $ipValue `
-        --firewall $(if ($firewallActive) { "true" } else { "false" }) `
-        --firewall-products "@$fwTempFile" `
-        --av-products "@$avTempFile" `
-        --disk-details "@$diskTempFile" 2>$null
+    Log-Msg "Sending health to API (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s, FW: ${firewallActive}, PROCS: ${processCount})"
 
-    Remove-Item $fwTempFile, $avTempFile, $diskTempFile -ErrorAction SilentlyContinue
-
-    if ($LASTEXITCODE -eq 0) {
-        Log-Msg "* Health data sent"
+    try {
+        Invoke-RestMethod -Uri "$ApiBase2/api/agent/health-monitoring/" -Method POST `
+            -Headers @{ Authorization="Bearer $ApiKey2"; "Content-Type"="application/json" } `
+            -Body $HealthPayload -TimeoutSec 20 -ErrorAction Stop | Out-Null
+        Log-Msg "* Health data sent via API"
         return $true
-    } else {
-        Log-Msg "x Health data send failed"
+    } catch {
+        Log-Msg "x Health API failed: $($_.Exception.Message)"
         return $false
     }
 }

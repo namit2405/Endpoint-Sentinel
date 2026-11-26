@@ -193,6 +193,8 @@ class EndpointStatus(models.Model):
     disk_details = models.JSONField(default=list, blank=True)       # Per-drive breakdown [{"drive": "C:", "total_gb": 237.9, ...}]
     uptime_seconds = models.BigIntegerField(null=True, blank=True)  # Device uptime in seconds
     process_count = models.IntegerField(null=True, blank=True)      # Active processes
+    running_apps = models.JSONField(default=list, blank=True)
+    # e.g. [{"name": "chrome.exe", "pid": 1234, "cpu_percent": 2.5, "memory_mb": 245.3}]
     
     # ── Security status ───────────────────────────────────────────────────
     firewall_active = models.BooleanField(null=True, blank=True)

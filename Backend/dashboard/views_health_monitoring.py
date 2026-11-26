@@ -124,7 +124,15 @@ def health_monitoring(request):
         endpoint.memory_percent = health_data.get("memory_percent")
         endpoint.disk_percent = health_data.get("disk_percent")
         endpoint.uptime_seconds = health_data.get("uptime_seconds")
-        endpoint.process_count = health_data.get("process_count")
+        running_apps = health_data.get("running_apps") or data.get("running_apps") or []
+        if isinstance(running_apps, str):
+            import json as _json; running_apps = _json.loads(running_apps)
+        endpoint.running_apps = running_apps if isinstance(running_apps, list) else []
+        provided_process_count = health_data.get("process_count") or data.get("process_count")
+        if provided_process_count is not None:
+            endpoint.process_count = provided_process_count
+        elif endpoint.running_apps:
+            endpoint.process_count = len(endpoint.running_apps)
         endpoint.firewall_active = health_data.get("firewall_active")
         endpoint.antivirus_active = health_data.get("antivirus_active")
         firewall_products = health_data.get("firewall_products") or data.get("firewall_products") or []

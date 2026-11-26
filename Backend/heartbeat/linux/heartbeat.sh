@@ -104,12 +104,35 @@ for av in clamav sophos-av bitdefender eset; do
 done
 
 # =============================================================================
+# Collect top 15 processes by CPU
+# =============================================================================
+
+PROCESS_COUNT=$(ps aux 2>/dev/null | wc -l)
+RUNNING_APPS=$(ps aux --sort=-%cpu 2>/dev/null | head -n 16 | tail -n 15 | python3 -c "
+import sys, json
+rows = []
+for line in sys.stdin:
+    parts = line.split(None, 10)
+    if len(parts) >= 11:
+        try:
+            rows.append({
+                'name': parts[10].strip().split('/')[-1][:50],
+                'pid': int(parts[1]),
+                'cpu_percent': float(parts[2]),
+                'memory_mb': round(float(parts[5]) / 1024, 1)
+            })
+        except (ValueError, IndexError):
+            pass
+print(json.dumps(rows))
+" 2>/dev/null || echo "[]")
+
+# =============================================================================
 # Build heartbeat JSON
 # =============================================================================
 
-JSON=$(python3 - "$HOSTNAME_VAL" "$OS_VAL" "$IP_VAL" "$USERNAME_VAL" "$AGENT_VERSION" "$MAC_VAL" "$WOL_ENABLED" "$DEVICE_TYPE" "$FW_PRODUCTS" "$AV_PRODUCTS" <<'PY'
+JSON=$(python3 - "$HOSTNAME_VAL" "$OS_VAL" "$IP_VAL" "$USERNAME_VAL" "$AGENT_VERSION" "$MAC_VAL" "$WOL_ENABLED" "$DEVICE_TYPE" "$FW_PRODUCTS" "$AV_PRODUCTS" "$PROCESS_COUNT" "$RUNNING_APPS" <<'PY'
 import json, sys
-hostname, os_name, ip, username, agent_version, mac, wol_enabled, device_type, fw_products, av_products = sys.argv[1:]
+hostname, os_name, ip, username, agent_version, mac, wol_enabled, device_type, fw_products, av_products, process_count, running_apps = sys.argv[1:]
 data = {
     "hostname": hostname,
     "os": os_name,
@@ -119,6 +142,8 @@ data = {
     "device_type": device_type,
     "firewall_products": json.loads(fw_products),
     "antivirus_products": json.loads(av_products),
+    "process_count": int(process_count) if process_count.isdigit() else None,
+    "running_apps": json.loads(running_apps),
 }
 if mac:
     data["mac_address"] = mac
