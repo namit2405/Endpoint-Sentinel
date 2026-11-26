@@ -1058,8 +1058,23 @@ Log-Msg "* Health monitoring run finished"
     Write-Host "Creating scheduled tasks..."
 
     $PwshPath = (Get-Command powershell).Source
-    $CommonSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
-    $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $CommonSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -RunOnlyIfNetworkAvailable
+
+    # Use SYSTEM if it can reach the network, otherwise fall back to current user.
+    # Test network access as SYSTEM by checking if Supabase host is reachable.
+    $UseSystem = $false
+    try {
+        $TestConn = Test-NetConnection -ComputerName "aws-0-ap-southeast-1.pooler.supabase.com" -Port 6543 -InformationLevel Quiet -WarningAction SilentlyContinue
+        $UseSystem = $TestConn
+    } catch {}
+
+    if ($UseSystem) {
+        $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    } else {
+        # SYSTEM lacks outbound network — run as current interactive user
+        $Principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType InteractiveToken -RunLevel Highest
+        Write-Host "Note: Tasks will run as $env:USERDOMAIN\$env:USERNAME (SYSTEM has no network access)"
+    }
     # Task Scheduler rejects TimeSpan::MaxValue (P99999999...). Ten years is
     # within the scheduler's supported range and keeps these recurring tasks
     # effectively permanent until the installer is run again.
