@@ -1,5 +1,58 @@
 export type OS = "Windows" | "Linux" | "macOS";
 
+export interface ServiceInfo {
+  name: string;
+  display?: string;
+  status: string;
+}
+
+export interface PortInfo {
+  address: string;
+  port: string | number;
+  process: string;
+}
+
+export interface SoftwareInfo {
+  name: string;
+  version?: string;
+  publisher?: string;
+}
+
+export interface UserInfo {
+  name: string;
+  enabled?: boolean;
+  pwd_never_expires?: boolean;
+}
+
+export interface TaskInfo {
+  name: string;
+  path?: string;
+  state?: string;
+}
+
+export interface PatchInfo {
+  id: string;
+  description?: string;
+  installed_on?: string;
+}
+
+export interface RawData {
+  // Windows
+  running_services?: ServiceInfo[] | string[];
+  open_ports?: PortInfo[];
+  installed_software?: SoftwareInfo[];
+  browser_extensions?: Array<{ browser: string; id: string }>;
+  admin_accounts?: string[];
+  all_users?: UserInfo[];
+  scheduled_tasks?: TaskInfo[];
+  installed_patches?: PatchInfo[];
+  // Linux
+  world_writable_dirs?: number;
+  network_shares?: string[];
+  network_listeners?: string[];
+  installed_packages_count?: number;
+}
+
 export type HealthStatus = "healthy" | "warning" | "critical";
 
 export type RiskLevel = "low" | "medium" | "high";
@@ -66,6 +119,7 @@ export interface EndpointAudit {
     reportDate: string;
     s3ObjectKey: string;
   }>;
+  raw_data?: RawData;
 }
 
 export interface EndpointStatus {

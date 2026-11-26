@@ -80,6 +80,7 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
           reportDate: report.report_date,
           s3ObjectKey: report.s3_object_key ?? "",
         })),
+        raw_data: ep.audit?.raw_data ?? {},
       },
     }));
   } catch (error) {
