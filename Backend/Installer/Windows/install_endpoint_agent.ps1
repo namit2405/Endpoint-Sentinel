@@ -1059,9 +1059,15 @@ Log-Msg "* Health monitoring run finished"
 
     $PwshPath = (Get-Command powershell).Source
     $CommonSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -RunOnlyIfNetworkAvailable
-    # S4U logon type: runs without stored password, with network access, even when no user is logged in.
-    # Use the actual machine\user identity (not WORKGROUP which may not resolve on domain/standalone machines).
-    $TaskUser = "$env:COMPUTERNAME\$env:USERNAME"
+    # Use domain account if domain-joined, otherwise local machine account.
+    # S4U logon: runs without stored password, with network access, even when no user is logged in.
+    if ($env:USERDOMAIN -ne $env:COMPUTERNAME) {
+        # Domain-joined machine — use domain\user
+        $TaskUser = "$env:USERDOMAIN\$env:USERNAME"
+    } else {
+        # Standalone/workgroup machine — use computername\user
+        $TaskUser = "$env:COMPUTERNAME\$env:USERNAME"
+    }
     $Principal = New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType S4U -RunLevel Highest
     Write-Host "  Tasks will run as $TaskUser (S4U — no login required, network enabled)"
     # Task Scheduler rejects TimeSpan::MaxValue (P99999999...). Ten years is
