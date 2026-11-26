@@ -824,18 +824,27 @@ function Collect-And-Send-Health {
     } else { 0 }
 
     # Collect top 20 processes by CPU
-    $processCount = (Get-Process -ErrorAction SilentlyContinue).Count
-    $topProcesses = Get-Process -ErrorAction SilentlyContinue |
-        Sort-Object CPU -Descending |
-        Select-Object -First 20 |
-        ForEach-Object {
+    $processCount = 0
+    $topProcesses = @()
+    try {
+        $allProcs = Get-Process -ErrorAction SilentlyContinue
+        $processCount = $allProcs.Count
+        $topProcesses = $allProcs | Sort-Object CPU -Descending | Select-Object -First 20 | ForEach-Object {
+            $cpuPct = 0.0
+            try {
+                if ($_.CPU -and $_.StartTime) {
+                    $uptimeSecs = [math]::Max(1, ((Get-Date) - $_.StartTime).TotalSeconds)
+                    $cpuPct = [math]::Round($_.CPU / $uptimeSecs * 100 / [System.Environment]::ProcessorCount, 1)
+                }
+            } catch {}
             @{
-                name        = $_.ProcessName
-                pid         = $_.Id
-                cpu_percent = [math]::Round($_.CPU / [math]::Max(1, ((Get-Date) - $_.StartTime).TotalSeconds) * 100, 1)
-                memory_mb   = [math]::Round($_.WorkingSet64 / 1MB, 1)
+                name       = $_.ProcessName
+                pid        = $_.Id
+                cpu_percent = $cpuPct
+                memory_mb  = [math]::Round($_.WorkingSet64 / 1MB, 1)
             }
         }
+    } catch {}
 
     # FIREWALL — check Windows Security Center (covers FortiClient, Sophos, etc.)
     # then fall back to Windows Defender Firewall profiles.
@@ -993,8 +1002,9 @@ function Collect-And-Send-Health {
     $FwProductsJson = if ($fwProducts.Count -eq 0) { '[]' } elseif ($fwProducts.Count -eq 1) { '[' + ($fwProducts[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $fwProducts | ConvertTo-Json -Compress -Depth 3 }
     $AvProductsJson = if ($avProducts.Count -eq 0) { '[]' } elseif ($avProducts.Count -eq 1) { '[' + ($avProducts[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $avProducts | ConvertTo-Json -Compress -Depth 3 }
     $DiskDetailsJson = if ($diskDetails.Count -eq 0) { '[]' } elseif ($diskDetails.Count -eq 1) { '[' + ($diskDetails[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $diskDetails | ConvertTo-Json -Compress -Depth 3 }
+    $ProcessDetailsJson = if ($topProcesses.Count -eq 0) { '[]' } elseif ($topProcesses.Count -eq 1) { '[' + ($topProcesses[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $topProcesses | ConvertTo-Json -Compress -Depth 3 }
 
-    $HealthPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"ip_address`":`"$ipValue`",`"cpu_percent`":$cpuPercent,`"memory_percent`":$memPercent,`"disk_percent`":$diskPercent,`"uptime_seconds`":$uptimeSeconds,`"firewall_active`":$(if($firewallActive){'true'}else{'false'}),`"firewall_products`":$FwProductsJson,`"antivirus_products`":$AvProductsJson,`"disk_details`":$DiskDetailsJson}"
+    $HealthPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"ip_address`":`"$ipValue`",`"cpu_percent`":$cpuPercent,`"memory_percent`":$memPercent,`"disk_percent`":$diskPercent,`"uptime_seconds`":$uptimeSeconds,`"firewall_active`":$(if($firewallActive){'true'}else{'false'}),`"firewall_products`":$FwProductsJson,`"antivirus_products`":$AvProductsJson,`"disk_details`":$DiskDetailsJson,`"process_count`":$processCount,`"running_apps`":$ProcessDetailsJson}"
 
     $ApiBase2 = $env:LOCAL_BASE_URL; if (-not $ApiBase2) { $ApiBase2 = "https://endpoint-dashboard.pntr.dev" }
     $ApiKey2 = $env:HEARTBEAT_API_KEY; if (-not $ApiKey2) { $ApiKey2 = "a3f9c2e1b8d7" }
