@@ -132,7 +132,7 @@ export default function SignInPage() {
 
         <div className="relative z-10 flex items-center gap-3 px-10 pt-10">
           <img
-            src="/images/pyleusa-logo.png"
+            src="/images/pyleusa-logo.svg"
             alt="PyleUSA"
             className="h-auto w-24 rounded shadow-elevated"
           />
@@ -178,7 +178,7 @@ export default function SignInPage() {
         >
           <div className="mb-6 flex items-center gap-2.5 lg:hidden">
             <img
-              src="/images/pyleusa-logo.png"
+              src="/images/pyleusa-logo.svg"
               alt="PyleUSA"
               className="h-auto w-16 rounded"
             />
@@ -319,7 +319,8 @@ export default function SignInPage() {
           </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            © 2026 techDefender Systems Private Limited · Endpoint Security
+            © 2026 Powered by techDefender Systems Private Limited | All Rights
+            Reserved · Endpoint Security
           </p>
         </motion.div>
       </div>

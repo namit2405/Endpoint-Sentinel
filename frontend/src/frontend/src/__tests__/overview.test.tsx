@@ -13,18 +13,28 @@ describe("Overview page", () => {
     expect(
       within(connection).getByText("Total Endpoints").parentElement,
     ).toHaveTextContent("20");
-    expect(within(connection).getByText("Online")).toBeInTheDocument();
+    expect(
+      within(connection).getByText("Online Endpoints"),
+    ).toBeInTheDocument();
     expect(
       within(connection).queryByText("Connection warning"),
     ).not.toBeInTheDocument();
-    expect(within(connection).getByText("Offline")).toBeInTheDocument();
+    expect(
+      within(connection).getByText("Offline Endpoints"),
+    ).toBeInTheDocument();
+    const offlineLink = within(connection).getByRole("link", {
+      name: /Offline Endpoints/,
+    });
+    const offlineIcon = offlineLink.querySelector("svg.lucide-wifi-off");
+    expect(offlineIcon).toBeInTheDocument();
+    expect(offlineIcon?.parentElement).toHaveClass("text-destructive");
   });
 
   it("navigates from connection cards to Live Status", async () => {
     const { user } = renderApp();
 
     await screen.findByRole("link", { name: /Total Endpoints/ });
-    await user.click(screen.getByRole("link", { name: /Online/ }));
+    await user.click(screen.getByRole("link", { name: /Online Endpoints/ }));
 
     expect(
       await screen.findByRole("heading", { name: "Live Status" }),
@@ -34,23 +44,23 @@ describe("Overview page", () => {
   it("navigates from health cards to Inventory", async () => {
     const { user } = renderApp();
 
-    await screen.findByRole("link", { name: /Healthy/ });
-    await user.click(screen.getByRole("link", { name: /Healthy/ }));
+    await screen.findByRole("link", { name: /Healthy Endpoints/ });
+    await user.click(screen.getByRole("link", { name: /Healthy Endpoints/ }));
 
     expect(
       await screen.findByRole("heading", { name: "Machine Inventory" }),
     ).toBeInTheDocument();
   });
 
-  it("renders risk KPI cards for Healthy, Unhealthy, and Critical", async () => {
+  it("renders risk KPI cards with endpoint counts", async () => {
     renderApp();
 
     const risk = await screen.findByRole("region", {
       name: "Risk posture summary",
     });
-    expect(within(risk).getByText("Healthy")).toBeInTheDocument();
-    expect(within(risk).getByText("Unhealthy")).toBeInTheDocument();
-    expect(within(risk).getByText("Critical")).toBeInTheDocument();
+    expect(within(risk).getByText("Healthy Endpoints")).toBeInTheDocument();
+    expect(within(risk).getByText("At-risk Endpoints")).toBeInTheDocument();
+    expect(within(risk).getByText("Critical Endpoints")).toBeInTheDocument();
   });
 
   it("renders the three chart cards and the OS distribution legend", async () => {

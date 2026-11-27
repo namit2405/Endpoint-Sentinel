@@ -11,8 +11,8 @@ describe("App shell and navigation", () => {
     ).toBeInTheDocument();
     // Overview KPI cards are present.
     expect(screen.getByText("Total Endpoints")).toBeInTheDocument();
-    expect(screen.getByText("Online")).toBeInTheDocument();
-    expect(screen.getByText("Offline")).toBeInTheDocument();
+    expect(screen.getByText("Online Endpoints")).toBeInTheDocument();
+    expect(screen.getByText("Offline Endpoints")).toBeInTheDocument();
   });
 
   it("navigates between all primary pages via the sidebar", async () => {

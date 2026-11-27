@@ -41,7 +41,10 @@ export function Layout({
         </main>
         <footer className="border-t border-border bg-muted/40 px-4 py-4 md:px-6">
           <div className="flex flex-col items-start justify-between gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center">
-            <p>© 2026 techDefender Systems Private Limited · Endpoint Security</p>
+            <p>
+              © 2026 Powered by techDefender Systems Private Limited | All
+              Rights Reserved · Endpoint Security
+            </p>
           </div>
         </footer>
       </SidebarInset>

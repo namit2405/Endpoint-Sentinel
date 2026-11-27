@@ -32,12 +32,12 @@ import { Link } from "@tanstack/react-router";
 import {
   Activity,
   CheckCircle2,
-  CircleOff,
   Monitor,
   Server,
   ShieldAlert,
   ShieldCheck,
   ShieldX,
+  WifiOff,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -207,7 +207,7 @@ export default function OverviewPage() {
       ocid: "overview.kpi.total",
     },
     {
-      label: "Online",
+      label: "Online Endpoints",
       value: summary.online,
       status: "online",
       icon: <Activity className="size-5" />,
@@ -215,10 +215,10 @@ export default function OverviewPage() {
       ocid: "overview.kpi.online",
     },
     {
-      label: "Offline",
+      label: "Offline Endpoints",
       value: summary.offline,
       status: "offline",
-      icon: <CircleOff className="size-5" />,
+      icon: <WifiOff className="size-5" />,
       hint: "Need Attention",
       ocid: "overview.kpi.offline",
     },
@@ -233,7 +233,7 @@ export default function OverviewPage() {
     ocid: string;
   }[] = [
     {
-      label: "Healthy",
+      label: "Healthy Endpoints",
       value: summary.healthy,
       health: "healthy",
       icon: <ShieldCheck className="size-5" />,
@@ -241,7 +241,7 @@ export default function OverviewPage() {
       ocid: "overview.risk.healthy",
     },
     {
-      label: "Unhealthy",
+      label: "At-risk Endpoints",
       value: summary.atRisk,
       health: "warning",
       icon: <ShieldAlert className="size-5" />,
@@ -249,7 +249,7 @@ export default function OverviewPage() {
       ocid: "overview.risk.warning",
     },
     {
-      label: "Critical",
+      label: "Critical Endpoints",
       value: summary.critical,
       health: "critical",
       icon: <ShieldX className="size-5" />,

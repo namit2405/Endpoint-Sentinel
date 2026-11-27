@@ -38,9 +38,9 @@ export function Sidebar() {
     <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="flex items-center gap-2.5 px-5 py-5">
         <img
-          src="/images/pyleusa-logo.png"
+          src="/images/pyleusa-logo.svg"
           alt="PyleUSA"
-          className="h-auto w-16 shrink-0 rounded"
+          className="h-auto w-32 shrink-0 rounded"
         />
         <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
           <span className="font-display text-base font-bold tracking-tight text-sidebar-foreground">
