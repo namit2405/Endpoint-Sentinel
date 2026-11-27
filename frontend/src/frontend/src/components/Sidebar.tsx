@@ -40,7 +40,7 @@ export function Sidebar() {
         <img
           src="/images/pyleusa-logo.svg"
           alt="PyleUSA"
-          className="h-auto w-32 shrink-0 rounded"
+          className="h-auto w-20 shrink-0 rounded"
         />
         <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
           <span className="font-display text-base font-bold tracking-tight text-sidebar-foreground">
