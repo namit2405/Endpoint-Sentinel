@@ -21,7 +21,7 @@ describe("Authentication gate", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Sign in to Sentinel Command",
+        name: "Sign in to VP-infra",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText("Individual Account")).toBeInTheDocument();
@@ -38,7 +38,7 @@ describe("Authentication gate", () => {
     render(<App />);
 
     await screen.findByRole("heading", {
-      name: "Sign in to Sentinel Command",
+      name: "Sign in to VP-infra",
     });
     await user.click(screen.getByText("Individual Account"));
     await user.click(
@@ -64,7 +64,7 @@ describe("Authentication gate", () => {
     render(<App />);
 
     await screen.findByRole("heading", {
-      name: "Sign in to Sentinel Command",
+      name: "Sign in to VP-infra",
     });
     await user.click(screen.getByText("Company Account"));
     await user.click(
@@ -114,7 +114,7 @@ describe("Authentication gate", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Sign in to Sentinel Command",
+        name: "Sign in to VP-infra",
       }),
     ).toBeInTheDocument();
     expect(
@@ -141,7 +141,7 @@ describe("Authentication gate", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Sign in to Sentinel Command",
+        name: "Sign in to VP-infra",
       }),
     ).toBeInTheDocument();
     expect(

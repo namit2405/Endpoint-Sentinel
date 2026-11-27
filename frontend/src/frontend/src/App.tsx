@@ -62,7 +62,7 @@ function FullScreenLoader() {
         className="size-6 animate-spin text-primary"
         aria-hidden="true"
       />
-      <span className="sr-only">Loading Sentinel Command</span>
+      <span className="sr-only">Loading VP-infra</span>
     </div>
   );
 }
@@ -92,7 +92,7 @@ function RootGate() {
   }
 
   const meta = TITLES[pathname] ?? {
-    title: "Sentinel Command",
+    title: "VP-infra",
     subtitle: "Endpoint Security Dashboard",
   };
   return <Layout title={meta.title} subtitle={meta.subtitle} />;

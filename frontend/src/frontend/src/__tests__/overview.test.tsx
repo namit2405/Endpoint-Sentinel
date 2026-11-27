@@ -15,9 +15,31 @@ describe("Overview page", () => {
     ).toHaveTextContent("20");
     expect(within(connection).getByText("Online")).toBeInTheDocument();
     expect(
-      within(connection).getByText("Connection warning"),
-    ).toBeInTheDocument();
+      within(connection).queryByText("Connection warning"),
+    ).not.toBeInTheDocument();
     expect(within(connection).getByText("Offline")).toBeInTheDocument();
+  });
+
+  it("navigates from connection cards to Live Status", async () => {
+    const { user } = renderApp();
+
+    await screen.findByRole("link", { name: /Total Endpoints/ });
+    await user.click(screen.getByRole("link", { name: /Online/ }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Live Status" }),
+    ).toBeInTheDocument();
+  });
+
+  it("navigates from health cards to Inventory", async () => {
+    const { user } = renderApp();
+
+    await screen.findByRole("link", { name: /Healthy/ });
+    await user.click(screen.getByRole("link", { name: /Healthy/ }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Machine Inventory" }),
+    ).toBeInTheDocument();
   });
 
   it("renders risk KPI cards for Healthy, Unhealthy, and Critical", async () => {
@@ -34,9 +56,9 @@ describe("Overview page", () => {
   it("renders the three chart cards and the OS distribution legend", async () => {
     renderApp();
 
-    expect(await screen.findByText("Health Trend")).toBeInTheDocument();
+    expect(await screen.findByText("Endpoint Health Analytics")).toBeInTheDocument();
     expect(screen.getByText("OS Distribution")).toBeInTheDocument();
-    expect(screen.getByText("Top Riskiest Endpoints")).toBeInTheDocument();
+    expect(screen.getByText("Endpoint Security Posture")).toBeInTheDocument();
 
     // OS distribution legend lists each OS with its seeded count.
     const osList = screen.getByText("OS Distribution").closest("div");

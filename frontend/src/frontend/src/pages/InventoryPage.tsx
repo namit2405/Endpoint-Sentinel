@@ -898,7 +898,7 @@ export default function InventoryPage() {
                 <TableHead>OS</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>IP</TableHead>
-                <TableHead>MAC</TableHead>
+                <TableHead>Disk Usage</TableHead>
                 <TableHead>CPU</TableHead>
                 <TableHead>RAM</TableHead>
                 <TableHead>Updates</TableHead>
@@ -956,8 +956,8 @@ export default function InventoryPage() {
                   <TableCell className="font-mono text-muted-foreground">
                     {e.ip_address}
                   </TableCell>
-                  <TableCell className="font-mono text-muted-foreground">
-                    {e.mac_address}
+                  <TableCell className="text-right font-mono text-muted-foreground">
+                    {formatPercent(e.audit.hardware.diskPercent)}
                   </TableCell>
                   <TableCell>
                     <span className="text-foreground">

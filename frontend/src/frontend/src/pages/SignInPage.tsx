@@ -131,12 +131,14 @@ export default function SignInPage() {
         </svg>
 
         <div className="relative z-10 flex items-center gap-3 px-10 pt-10">
-          <div className="flex size-11 items-center justify-center rounded-xl gradient-signin-accent text-signin-accent-foreground shadow-elevated">
-            <ShieldCheck className="size-6" aria-hidden="true" />
-          </div>
+          <img
+            src="/images/pyleusa-logo.png"
+            alt="PyleUSA"
+            className="h-auto w-24 rounded shadow-elevated"
+          />
           <div className="flex flex-col leading-tight">
             <span className="font-display text-xl font-bold tracking-tight">
-              Sentinel Command
+              VP-infra
             </span>
             <span className="text-[11px] font-medium uppercase tracking-widest text-sidebar-foreground/60">
               Endpoint Security
@@ -175,17 +177,19 @@ export default function SignInPage() {
           className="w-full max-w-md"
         >
           <div className="mb-6 flex items-center gap-2.5 lg:hidden">
-            <div className="flex size-9 items-center justify-center rounded-lg gradient-signin-accent text-signin-accent-foreground">
-              <ShieldCheck className="size-5" aria-hidden="true" />
-            </div>
+            <img
+              src="/images/pyleusa-logo.png"
+              alt="PyleUSA"
+              className="h-auto w-16 rounded"
+            />
             <span className="font-display text-lg font-bold tracking-tight text-foreground">
-              Sentinel Command
+              VP-infra
             </span>
           </div>
 
           <div className="rounded-2xl border border-border bg-card p-8 shadow-auth md:p-10">
             <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">
-              Sign in to Sentinel Command
+              Sign in to VP-infra
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
               Choose your account type and enter your credentials.
@@ -315,7 +319,7 @@ export default function SignInPage() {
           </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            © {new Date().getFullYear()} Sentinel Command · Endpoint Security
+            © 2026 techDefender Systems Private Limited · Endpoint Security
           </p>
         </motion.div>
       </div>

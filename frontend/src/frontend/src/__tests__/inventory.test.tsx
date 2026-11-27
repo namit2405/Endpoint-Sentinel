@@ -13,8 +13,18 @@ describe("Inventory page", () => {
       screen.getByRole("button", { name: /Sort by Security Health/ }),
     ).toBeInTheDocument();
     expect(screen.getByText("10.0.1.11")).toBeInTheDocument();
-    expect(screen.getByText("00:1A:2B:3C:4D:01")).toBeInTheDocument();
-    // CPU cores + model, RAM, updates, risk score columns.
+    expect(screen.getByText("Disk Usage")).toBeInTheDocument();
+    expect(
+      screen.queryByText("00:1A:2B:3C:4D:01"),
+    ).not.toBeInTheDocument();
+    const endpointRow = screen
+      .getByRole("link", { name: "srv-web-01" })
+      .closest("tr");
+    if (!endpointRow) throw new Error("Endpoint row was not rendered");
+    expect(
+      within(endpointRow).getAllByRole("cell")[4],
+    ).toHaveTextContent(/\d+%/);
+    // CPU cores + model, RAM, updates, and disk usage columns.
     expect(screen.getAllByText("8 cores").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Intel Xeon E5-2680 v4").length).toBeGreaterThan(
       0,

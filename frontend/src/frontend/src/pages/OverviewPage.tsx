@@ -28,9 +28,9 @@ import type {
   QuickAlert,
 } from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
+import { Link } from "@tanstack/react-router";
 import {
   Activity,
-  AlertTriangle,
   CheckCircle2,
   CircleOff,
   Monitor,
@@ -76,6 +76,7 @@ function KpiCard({
   valueClass,
   hint,
   ocid,
+  to,
 }: {
   label: string;
   value: number;
@@ -84,27 +85,39 @@ function KpiCard({
   valueClass: string;
   hint: string;
   ocid: string;
+  to: "/live" | "/inventory";
 }) {
   return (
-    <Card data-ocid={ocid} className="gap-3 py-5">
-      <CardContent className="flex items-start justify-between gap-3 px-5">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p
-            className={`mt-1 font-display text-3xl font-bold tracking-tight ${valueClass}`}
+    <Link
+      to={to}
+      aria-label={`${label}: ${value}. ${hint}`}
+      className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    >
+      <Card
+        data-ocid={ocid}
+        className="gap-3 py-5 transition-colors hover:bg-accent/40"
+      >
+        <CardContent className="flex items-start justify-between gap-3 px-5">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-muted-foreground">{label}</p>
+            <p
+              className={`mt-1 font-display text-3xl font-bold tracking-tight ${valueClass}`}
+            >
+              {value}
+            </p>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {hint}
+            </p>
+          </div>
+          <div
+            className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}
+            aria-hidden="true"
           >
-            {value}
-          </p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{hint}</p>
-        </div>
-        <div
-          className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}
-          aria-hidden="true"
-        >
-          {icon}
-        </div>
-      </CardContent>
-    </Card>
+            {icon}
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -202,19 +215,11 @@ export default function OverviewPage() {
       ocid: "overview.kpi.online",
     },
     {
-      label: "Connection warning",
-      value: summary.warning,
-      status: "warning",
-      icon: <AlertTriangle className="size-5" />,
-      hint: "Needs attention",
-      ocid: "overview.kpi.warning",
-    },
-    {
       label: "Offline",
       value: summary.offline,
       status: "offline",
       icon: <CircleOff className="size-5" />,
-      hint: "Not reporting",
+      hint: "Need Attention",
       ocid: "overview.kpi.offline",
     },
   ];
@@ -259,11 +264,9 @@ export default function OverviewPage() {
     <div className="space-y-6">
       {/* Connection KPI row */}
       <section aria-label="Endpoint connection summary">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {loading
-            ? ["kpi-1", "kpi-2", "kpi-3", "kpi-4"].map((k) => (
-                <KpiSkeleton key={k} />
-              ))
+            ? ["kpi-1", "kpi-2", "kpi-3"].map((k) => <KpiSkeleton key={k} />)
             : connectionKpis.map((kpi) => (
                 <KpiCard
                   key={kpi.label}
@@ -274,6 +277,7 @@ export default function OverviewPage() {
                   valueClass={connectionStatusBg(kpi.status).split(" ")[1]}
                   hint={kpi.hint}
                   ocid={kpi.ocid}
+                  to="/live"
                 />
               ))}
         </div>
@@ -294,6 +298,7 @@ export default function OverviewPage() {
                   valueClass={healthStatusBg(kpi.health).split(" ")[1]}
                   hint={kpi.hint}
                   ocid={kpi.ocid}
+                  to="/inventory"
                 />
               ))}
         </div>
@@ -303,7 +308,7 @@ export default function OverviewPage() {
       <section aria-label="Health and OS distribution charts">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <ChartCard
-            title="Health Trend"
+            title="Endpoint Health Analytics"
             subtitle="Average health score · last 7 days"
             ocid="overview.health_trend"
             className="lg:col-span-2"
@@ -450,8 +455,7 @@ export default function OverviewPage() {
       <section aria-label="Risk and alerts">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <ChartCard
-            title="Top Riskiest Endpoints"
-            subtitle="Highest audit risk scores"
+            title="Endpoint Security Posture"
             ocid="overview.top_risky"
             className="lg:col-span-2"
           >

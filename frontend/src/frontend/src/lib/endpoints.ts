@@ -5,12 +5,21 @@ import type {
   DiskDetail,
   EndpointStatus,
   HealthTrendPoint,
+  OS,
   OSDistribution,
   ProcessInfo,
   QuickAlert,
   SecurityProduct,
   SoftwareInfo,
 } from "./types";
+
+export function normalizeOS(value: unknown): OS {
+  const os = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (os.includes("windows")) return "Windows";
+  if (os.includes("mac") || os.includes("darwin")) return "macOS";
+  if (os.includes("linux")) return "Linux";
+  return "Linux";
+}
 
 /**
  * Fetch all endpoints from the backend.
@@ -23,7 +32,7 @@ export async function fetchEndpoints(): Promise<EndpointStatus[]> {
       hostname: ep.hostname,
       mac_address: ep.mac_address,
       ip_address: ep.ip_address,
-      os: ep.os === "macos" ? "macOS" : (ep.os || "Linux"),
+      os: normalizeOS(ep.os),
       cpu_percent: ep.cpu_percent ?? 0,
       memory_percent: ep.memory_percent ?? 0,
       disk_percent: ep.disk_percent ?? 0,

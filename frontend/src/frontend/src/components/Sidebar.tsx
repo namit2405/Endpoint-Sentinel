@@ -10,7 +10,6 @@ import {
   Search,
   Server,
   ShieldAlert,
-  ShieldCheck,
 } from "lucide-react";
 
 export interface NavItem {
@@ -38,15 +37,14 @@ export function Sidebar() {
   return (
     <div className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex size-9 items-center justify-center rounded-lg gradient-primary text-primary-foreground shadow-subtle">
-          <ShieldCheck className="size-5" aria-hidden="true" />
-        </div>
+        <img
+          src="/images/pyleusa-logo.png"
+          alt="PyleUSA"
+          className="h-auto w-16 shrink-0 rounded"
+        />
         <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
           <span className="font-display text-base font-bold tracking-tight text-sidebar-foreground">
-            Sentinel
-          </span>
-          <span className="text-[11px] font-medium uppercase tracking-widest text-sidebar-foreground/60">
-            Command
+            VP-infra
           </span>
         </div>
       </div>
