@@ -302,22 +302,47 @@ function Collect-And-Send-Health {
     $AvProductsJson = if ($avProducts.Count -eq 0) { '[]' } elseif ($avProducts.Count -eq 1) { '[' + ($avProducts[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $avProducts | ConvertTo-Json -Compress -Depth 3 }
     $DiskDetailsJson = if ($diskDetails.Count -eq 0) { '[]' } elseif ($diskDetails.Count -eq 1) { '[' + ($diskDetails[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $diskDetails | ConvertTo-Json -Compress -Depth 3 }
     $ProcessDetailsJson = if ($topProcesses.Count -eq 0) { '[]' } elseif ($topProcesses.Count -eq 1) { '[' + ($topProcesses[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $topProcesses | ConvertTo-Json -Compress -Depth 3 }
-    $InstalledAppsJson = if ($installedApps.Count -eq 0) { '[]' } elseif ($installedApps.Count -eq 1) { '[' + ($installedApps[0] | ConvertTo-Json -Compress -Depth 2) + ']' } else { $installedApps | ConvertTo-Json -Compress -Depth 2 }
 
-    $HealthPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"ip_address`":`"$ipValue`",`"cpu_percent`":$cpuPercent,`"memory_percent`":$memPercent,`"disk_percent`":$diskPercent,`"uptime_seconds`":$uptimeSeconds,`"firewall_active`":$(if($firewallActive){'true'}else{'false'}),`"firewall_products`":$FwProductsJson,`"antivirus_products`":$AvProductsJson,`"disk_details`":$DiskDetailsJson,`"process_count`":$processCount,`"running_apps`":$ProcessDetailsJson,`"installed_apps`":$InstalledAppsJson}"
+    # Write installed apps to temp file to avoid JSON string interpolation issues
+    # (app names contain special chars like parens, ampersands, plus signs)
+    $AppsTempFile = [System.IO.Path]::GetTempFileName() + ".json"
+    try {
+        if ($installedApps.Count -eq 0) {
+            '[]' | Set-Content $AppsTempFile -Encoding UTF8 -NoNewline
+        } elseif ($installedApps.Count -eq 1) {
+            ('[' + ($installedApps[0] | ConvertTo-Json -Compress -Depth 2) + ']') | Set-Content $AppsTempFile -Encoding UTF8 -NoNewline
+        } else {
+            ($installedApps | ConvertTo-Json -Compress -Depth 2) | Set-Content $AppsTempFile -Encoding UTF8 -NoNewline
+        }
+    } catch {
+        '[]' | Set-Content $AppsTempFile -Encoding UTF8 -NoNewline
+    }
+
+    $HealthPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"ip_address`":`"$ipValue`",`"cpu_percent`":$cpuPercent,`"memory_percent`":$memPercent,`"disk_percent`":$diskPercent,`"uptime_seconds`":$uptimeSeconds,`"firewall_active`":$(if($firewallActive){'true'}else{'false'}),`"firewall_products`":$FwProductsJson,`"antivirus_products`":$AvProductsJson,`"disk_details`":$DiskDetailsJson,`"process_count`":$processCount,`"running_apps`":$ProcessDetailsJson}"
 
     $ApiBase2 = $env:LOCAL_BASE_URL; if (-not $ApiBase2) { $ApiBase2 = "https://endpoint-dashboard.pntr.dev" }
     $ApiKey2 = $env:HEARTBEAT_API_KEY; if (-not $ApiKey2) { $ApiKey2 = "a3f9c2e1b8d7" }
 
-    Log-Msg "Sending health to API (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s, FW: ${firewallActive}, PROCS: ${processCount})"
+    Log-Msg "Sending health to API (CPU: ${cpuPercent}%, MEM: ${memPercent}%, DISK: ${diskPercent}%, UPTIME: ${uptimeSeconds}s, FW: ${firewallActive}, PROCS: ${processCount}, APPS: $($installedApps.Count))"
 
     try {
         Invoke-RestMethod -Uri "$ApiBase2/api/agent/health-monitoring/" -Method POST `
             -Headers @{ Authorization="Bearer $ApiKey2"; "Content-Type"="application/json" } `
             -Body $HealthPayload -TimeoutSec 20 -ErrorAction Stop | Out-Null
+
+        # Send installed apps separately to avoid payload size limits
+        if (Test-Path $AppsTempFile) {
+            $AppsPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"installed_apps`":$(Get-Content $AppsTempFile -Raw -Encoding UTF8)}"
+            Invoke-RestMethod -Uri "$ApiBase2/api/agent/health-monitoring/" -Method POST `
+                -Headers @{ Authorization="Bearer $ApiKey2"; "Content-Type"="application/json" } `
+                -Body $AppsPayload -TimeoutSec 30 -ErrorAction Stop | Out-Null
+            Remove-Item $AppsTempFile -ErrorAction SilentlyContinue
+        }
+
         Log-Msg "* Health data sent via API"
         return $true
     } catch {
+        Remove-Item $AppsTempFile -ErrorAction SilentlyContinue
         Log-Msg "x Health API failed: $($_.Exception.Message)"
         return $false
     }
