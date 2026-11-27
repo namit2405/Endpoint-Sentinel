@@ -14,18 +14,20 @@ describe("Overview page", () => {
       within(connection).getByText("Total Endpoints").parentElement,
     ).toHaveTextContent("20");
     expect(within(connection).getByText("Online")).toBeInTheDocument();
-    expect(within(connection).getByText("Connection warning")).toBeInTheDocument();
+    expect(
+      within(connection).getByText("Connection warning"),
+    ).toBeInTheDocument();
     expect(within(connection).getByText("Offline")).toBeInTheDocument();
   });
 
-  it("renders risk KPI cards for Healthy, Security warning, and Critical", async () => {
+  it("renders risk KPI cards for Healthy, Unhealthy, and Critical", async () => {
     renderApp();
 
     const risk = await screen.findByRole("region", {
       name: "Risk posture summary",
     });
     expect(within(risk).getByText("Healthy")).toBeInTheDocument();
-    expect(within(risk).getByText("Security warning")).toBeInTheDocument();
+    expect(within(risk).getByText("Unhealthy")).toBeInTheDocument();
     expect(within(risk).getByText("Critical")).toBeInTheDocument();
   });
 
@@ -45,12 +47,19 @@ describe("Overview page", () => {
   });
 
   it("renders quick alerts from critical/high findings in the seeded data", async () => {
-    renderApp();
+    const { user } = renderApp();
 
     expect(await screen.findByText("Quick Alerts")).toBeInTheDocument();
     // Critical findings from the seeded fleet (multiple hosts share the title).
     expect(screen.getAllByText("Firewall disabled").length).toBeGreaterThan(0);
     // A high-severity finding.
     expect(screen.getByText("24 pending security updates")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Firewall disabled/ }));
+    expect(
+      screen.getByRole("dialog", { name: /Firewall disabled/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Severity")).toBeInTheDocument();
+    expect(screen.getByText("Endpoint")).toBeInTheDocument();
   });
 });

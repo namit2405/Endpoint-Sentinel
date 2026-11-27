@@ -1,5 +1,13 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getDashboardSummary,
@@ -10,11 +18,15 @@ import {
 import {
   connectionStatusBg,
   healthStatusBg,
-  riskScoreBg,
-  riskScoreColor,
+  securityHealthScoreColor,
   timeAgo,
 } from "@/lib/format";
-import type { ConnectionStatus, HealthStatus, OS } from "@/lib/types";
+import type {
+  ConnectionStatus,
+  HealthStatus,
+  OS,
+  QuickAlert,
+} from "@/lib/types";
 import { useEndpoints } from "@/lib/useEndpoints";
 import {
   Activity,
@@ -27,7 +39,7 @@ import {
   ShieldCheck,
   ShieldX,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -140,7 +152,9 @@ function ChartCard({
 }
 
 export default function OverviewPage() {
-  const { endpoints, summary, isRefreshing, lastRefreshed, hasLoaded } = useEndpoints();
+  const { endpoints, summary, isRefreshing, lastRefreshed, hasLoaded } =
+    useEndpoints();
+  const [selectedAlert, setSelectedAlert] = useState<QuickAlert | null>(null);
 
   const healthTrend = useMemo(() => getHealthTrend(endpoints), [endpoints]);
   const osDistribution = useMemo(
@@ -222,7 +236,7 @@ export default function OverviewPage() {
       ocid: "overview.risk.healthy",
     },
     {
-      label: "Security warning",
+      label: "Unhealthy",
       value: summary.atRisk,
       health: "warning",
       icon: <ShieldAlert className="size-5" />,
@@ -488,14 +502,14 @@ export default function OverviewPage() {
                       }}
                       formatter={(value: number) => [
                         `${value} / 100`,
-                        "Risk score",
+                        "Security Health",
                       ]}
                     />
                     <Bar dataKey="riskScore" radius={[0, 6, 6, 0]} barSize={18}>
                       {topRisky.map((entry) => (
                         <Cell
                           key={entry.hostname}
-                          fill={riskScoreColor(entry.riskScore)
+                          fill={securityHealthScoreColor(entry.riskScore)
                             .replace("text-", "oklch(var(--")
                             .concat("))")}
                         />
@@ -544,46 +558,50 @@ export default function OverviewPage() {
             ) : (
               <ul className="space-y-3">
                 {quickAlerts.map((alert, i) => (
-                  <li
-                    key={alert.id}
-                    data-ocid={`overview.alert.${i + 1}`}
-                    className="flex items-start gap-3 rounded-lg border border-border bg-background/60 p-3"
-                  >
-                    <span
-                      className={`mt-0.5 size-2 shrink-0 rounded-full ${
-                        alert.severity === "critical"
-                          ? "bg-destructive"
-                          : "bg-warning"
-                      }`}
-                      aria-hidden="true"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {alert.title}
-                      </p>
-                      <p className="truncate font-mono text-xs text-muted-foreground">
-                        {alert.hostname}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <Badge
-                        variant={
+                  <li key={alert.id}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      data-ocid={`overview.alert.${i + 1}`}
+                      onClick={() => setSelectedAlert(alert)}
+                      className="h-auto w-full items-start justify-start gap-3 rounded-lg border border-border bg-background/60 p-3 text-left whitespace-normal hover:bg-muted/50"
+                    >
+                      <span
+                        className={`mt-0.5 size-2 shrink-0 rounded-full ${
                           alert.severity === "critical"
-                            ? "destructive"
-                            : "secondary"
-                        }
-                        className={
-                          alert.severity === "critical"
-                            ? "bg-destructive/15 text-destructive"
-                            : "bg-warning/15 text-warning"
-                        }
-                      >
-                        {alert.severity}
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground">
-                        {timeAgo(alert.timestamp, lastRefreshed)}
+                            ? "bg-destructive"
+                            : "bg-warning"
+                        }`}
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">
+                          {alert.title}
+                        </span>
+                        <span className="block truncate font-mono text-xs text-muted-foreground">
+                          {alert.hostname}
+                        </span>
                       </span>
-                    </div>
+                      <span className="flex shrink-0 flex-col items-end gap-1">
+                        <Badge
+                          variant={
+                            alert.severity === "critical"
+                              ? "destructive"
+                              : "secondary"
+                          }
+                          className={
+                            alert.severity === "critical"
+                              ? "bg-destructive/15 text-destructive"
+                              : "bg-warning/15 text-warning"
+                          }
+                        >
+                          {alert.severity}
+                        </Badge>
+                        <span className="text-[10px] text-muted-foreground">
+                          {timeAgo(alert.timestamp, lastRefreshed)}
+                        </span>
+                      </span>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -591,6 +609,48 @@ export default function OverviewPage() {
           </ChartCard>
         </div>
       </section>
+
+      <Dialog
+        open={selectedAlert !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedAlert(null);
+        }}
+      >
+        {selectedAlert && (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{selectedAlert.title}</DialogTitle>
+              <DialogDescription>{selectedAlert.description}</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3 rounded-lg border border-border bg-muted/30 p-4 text-sm">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">Endpoint</span>
+                <span className="font-mono font-medium text-foreground">
+                  {selectedAlert.hostname}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">Severity</span>
+                <Badge
+                  className={
+                    selectedAlert.severity === "critical"
+                      ? "bg-destructive/15 text-destructive"
+                      : "bg-warning/15 text-warning"
+                  }
+                >
+                  {selectedAlert.severity}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted-foreground">Detected</span>
+                <span className="text-foreground">
+                  {timeAgo(selectedAlert.timestamp, lastRefreshed)}
+                </span>
+              </div>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
 
       <p className="text-xs text-muted-foreground" aria-live="polite">
         {isRefreshing

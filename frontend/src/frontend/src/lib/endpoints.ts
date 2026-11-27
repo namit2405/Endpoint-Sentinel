@@ -219,47 +219,54 @@ export function getOSDistribution(
 export function getQuickAlerts(endpoints: EndpointStatus[]): QuickAlert[] {
   try {
     const alerts: QuickAlert[] = [];
-    
+
     for (const e of endpoints) {
       if (e.health_status === "critical" || e.health_status === "warning") {
         alerts.push({
           id: `alert-${e.mac_address}`,
           hostname: e.hostname,
-          title: 
-            e.health_status === "critical" 
+          title:
+            e.health_status === "critical"
               ? `${e.hostname} is CRITICAL - Immediate action required`
               : `${e.hostname} has warnings - Review recommended`,
+          description:
+            e.health_status === "critical"
+              ? "The endpoint has a critical health status. Investigate its security findings and restore it to a healthy state as soon as possible."
+              : "The endpoint has a warning health status. Review its security findings and resolve any issues that need attention.",
           severity: e.health_status === "critical" ? "critical" : "warning",
           timestamp: e.last_health_check,
         });
       }
-      
+
       // Add resource pressure alerts
       if ((e.cpu_percent ?? 0) > 90) {
         alerts.push({
           id: `alert-cpu-${e.mac_address}`,
           hostname: e.hostname,
           title: `High CPU usage on ${e.hostname} (${e.cpu_percent}%)`,
+          description: `CPU usage is ${e.cpu_percent}%, above the 90% alert threshold. Check for resource-intensive processes or unexpected activity.`,
           severity: "warning",
           timestamp: e.last_health_check,
         });
       }
-      
+
       if ((e.memory_percent ?? 0) > 85) {
         alerts.push({
           id: `alert-mem-${e.mac_address}`,
           hostname: e.hostname,
           title: `High memory usage on ${e.hostname} (${e.memory_percent}%)`,
+          description: `Memory usage is ${e.memory_percent}%, above the 85% alert threshold. Review memory-consuming processes and available capacity.`,
           severity: "warning",
           timestamp: e.last_health_check,
         });
       }
-      
+
       if ((e.disk_percent ?? 0) > 90) {
         alerts.push({
           id: `alert-disk-${e.mac_address}`,
           hostname: e.hostname,
           title: `Disk near full on ${e.hostname} (${e.disk_percent}%)`,
+          description: `Disk usage is ${e.disk_percent}%, above the 90% alert threshold. Review disk usage and free space to avoid service disruption.`,
           severity: "critical",
           timestamp: e.last_health_check,
         });

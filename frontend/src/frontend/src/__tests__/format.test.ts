@@ -1,4 +1,4 @@
-import { securityHealthScoreBg } from "@/lib/format";
+import { securityHealthScoreBg, securityHealthScoreColor } from "@/lib/format";
 import { describe, expect, it } from "vitest";
 
 describe("securityHealthScoreBg", () => {
@@ -12,5 +12,10 @@ describe("securityHealthScoreBg", () => {
     expect(securityHealthScoreBg(30)).toBe(
       "bg-destructive/15 text-destructive",
     );
+  });
+
+  it("uses the same green threshold for chart colors", () => {
+    expect(securityHealthScoreColor(71)).toBe("text-success");
+    expect(securityHealthScoreColor(70)).toBe("text-warning");
   });
 });

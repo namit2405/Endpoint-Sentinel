@@ -183,6 +183,7 @@ export interface QuickAlert {
   id: string;
   hostname: string;
   title: string;
+  description: string;
   severity: "critical" | "warning" | "healthy";
   timestamp: number;
 }
