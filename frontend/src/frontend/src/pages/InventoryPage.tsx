@@ -25,8 +25,8 @@ import {
 import { apiClient } from "@/lib/api-client";
 import {
   formatPercent,
-  riskScoreBg,
   riskScoreColor,
+  securityHealthScoreBg,
   timeAgo,
 } from "@/lib/format";
 import type { DeviceType, EndpointStatus, OS, RiskLevel } from "@/lib/types";
@@ -696,7 +696,10 @@ export default function InventoryPage() {
                 <Select
                   value={filters.deviceType}
                   onValueChange={(v) =>
-                    setFilters((f) => ({ ...f, deviceType: v as Filters["deviceType"] }))
+                    setFilters((f) => ({
+                      ...f,
+                      deviceType: v as Filters["deviceType"],
+                    }))
                   }
                 >
                   <SelectTrigger
@@ -900,7 +903,7 @@ export default function InventoryPage() {
                 <TableHead>RAM</TableHead>
                 <TableHead>Updates</TableHead>
                 <SortHeader
-                  label="Risk"
+                  label="Security Health"
                   sortableKey="risk"
                   className="text-right"
                 />
@@ -945,7 +948,9 @@ export default function InventoryPage() {
                         VM
                       </Badge>
                     ) : (
-                      <span className="text-xs text-muted-foreground">Physical</span>
+                      <span className="text-xs text-muted-foreground">
+                        Physical
+                      </span>
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-muted-foreground">
@@ -979,7 +984,7 @@ export default function InventoryPage() {
                   <TableCell className="text-right">
                     <span
                       data-ocid={`inventory.row.${i + 1}.risk`}
-                      className={`inline-flex min-w-[2.5rem] items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold ${riskScoreBg(
+                      className={`inline-flex min-w-[2.5rem] items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold ${securityHealthScoreBg(
                         e.audit.riskScore,
                       )}`}
                     >

@@ -90,6 +90,13 @@ export function riskScoreBg(score: number): string {
   return "bg-destructive/15 text-destructive";
 }
 
+/** Map a security health score (0-100) to a semantic background token for badges. */
+export function securityHealthScoreBg(score: number): string {
+  if (score > 70) return "bg-success/15 text-success";
+  if (score > 30) return "bg-warning/15 text-warning";
+  return "bg-destructive/15 text-destructive";
+}
+
 /** Map a health status to a semantic background token for pill badges. */
 export function healthStatusBg(status: HealthStatus): string {
   switch (status) {

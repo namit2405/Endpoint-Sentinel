@@ -9,6 +9,9 @@ describe("Inventory page", () => {
 
     // Wait for the simulated load to finish and the table to render.
     expect(await screen.findByText("srv-web-01")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Sort by Security Health/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText("10.0.1.11")).toBeInTheDocument();
     expect(screen.getByText("00:1A:2B:3C:4D:01")).toBeInTheDocument();
     // CPU cores + model, RAM, updates, risk score columns.
@@ -17,6 +20,24 @@ describe("Inventory page", () => {
       0,
     );
     expect(screen.getAllByText("32 GB").length).toBeGreaterThan(0);
+  });
+
+  it("colors scores above 70 green", async () => {
+    const { navigateTo } = renderApp();
+    await navigateTo("Inventory");
+    await screen.findByText("srv-web-01");
+
+    const scoreBadges = document.querySelectorAll(
+      '[data-ocid^="inventory.row."][data-ocid$=".risk"]',
+    );
+    const scoresAbove70 = Array.from(scoreBadges).filter(
+      (badge) => Number(badge.textContent) > 70,
+    );
+
+    expect(scoresAbove70.length).toBeGreaterThan(0);
+    for (const badge of scoresAbove70) {
+      expect(badge).toHaveClass("bg-success/15", "text-success");
+    }
   });
 
   it("searches by hostname and narrows the result set", async () => {
