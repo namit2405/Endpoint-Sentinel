@@ -95,35 +95,14 @@ function Collect-And-Send-Health {
         [math]::Floor(((Get-Date) - $os.LastBootUpTime).TotalSeconds)
     } else { 0 }
 
-    # Collect user-facing applications (filter out system processes/services)
+    # Collect all running processes — UI handles the app/service split
     $processCount = 0
     $topProcesses = @()
     try {
         $allProcs = Get-Process -ErrorAction SilentlyContinue
         $processCount = $allProcs.Count
 
-        $systemProcessNames = @(
-            'svchost','services','lsass','csrss','wininit','winlogon','smss','Registry',
-            'System','Idle','spoolsv','msdtc','WmiPrvSE','WmiApSrv','dllhost','rundll32',
-            'conhost','fontdrvhost','dwm','NisSrv','MsMpEng','SgrmBroker','SecurityHealthService',
-            'audiodg','TabTip','TabTip32','ctfmon','sihost','taskhostw','ShellExperienceHost',
-            'StartMenuExperienceHost','SearchIndexer','SearchHost','RuntimeBroker','backgroundTaskHost',
-            'ApplicationFrameHost','UserOOBEBroker','TextInputHost','splwow64','WerFault','wermgr',
-            'PerfWatson2','MpCmdRun','MpDefenderCoreService','msmpeng','nissrv'
-        )
-
-        $userApps = $allProcs | Where-Object {
-            $proc = $_
-            $name = $proc.ProcessName
-            # Skip known system processes
-            if ($systemProcessNames -contains $name) { return $false }
-            # Only include processes with a visible window — this is the true definition
-            # of a running application. Background services never have windows.
-            if ($proc.MainWindowHandle -ne [IntPtr]::Zero -and $proc.MainWindowTitle -ne '') { return $true }
-            return $false
-        }
-
-        $topProcesses = $userApps | Sort-Object WorkingSet64 -Descending | ForEach-Object {
+        $topProcesses = $allProcs | Sort-Object CPU -Descending | Select-Object -First 100 | ForEach-Object {
             $cpuPct = 0.0
             try {
                 if ($_.CPU -and $_.StartTime) {
@@ -131,12 +110,12 @@ function Collect-And-Send-Health {
                     $cpuPct = [math]::Round($_.CPU / $uptimeSecs * 100 / [System.Environment]::ProcessorCount, 1)
                 }
             } catch {}
-            @{
-                name        = $_.ProcessName
-                pid         = $_.Id
-                cpu_percent = $cpuPct
-                memory_mb   = [math]::Round($_.WorkingSet64 / 1MB, 1)
-            }
+            $dispName = $_.ProcessName
+            try {
+                if ($_.Description -and $_.Description -ne '') { $dispName = $_.Description }
+                elseif ($_.MainWindowTitle -ne '') { $dispName = $_.MainWindowTitle }
+            } catch {}
+            @{ name=$_.ProcessName; display_name=$dispName; pid=$_.Id; cpu_percent=$cpuPct; memory_mb=[math]::Round($_.WorkingSet64/1MB,1) }
         }
     } catch {}
 

@@ -356,12 +356,13 @@ export default function EndpointDetailPage() {
   const [servicesExpanded, setServicesExpanded] = useState(false);
   const [tasksExpanded, setTasksExpanded] = useState(false);
   const [patchesExpanded, setPatchesExpanded] = useState(false);
-  const [softwareSearch, setSoftwareSearch] = useState("");
-  const [softwarePage, setSoftwarePage] = useState(0);
   const [usersExpanded, setUsersExpanded] = useState(false);
-  const [appsSearch, setAppsSearch] = useState("");
-  const [appsSortKey, setAppsSortKey] = useState<keyof ProcessInfo>("cpu_percent");
-  const [appsSortAsc, setAppsSortAsc] = useState(false);
+  const [appSearch, setAppSearch] = useState('');
+  const [appPage, setAppPage] = useState(1);
+  const [procSearch, setProcSearch] = useState('');
+  const [procPage, setProcPage] = useState(1);
+  const [procSortKey, setProcSortKey] = useState<'cpu_percent'|'memory_mb'|'name'>('cpu_percent');
+  const [procSortDir, setProcSortDir] = useState<'asc'|'desc'>('desc');
 
   const endpoint = endpoints.find(
     (e) => e.mac_address.toLowerCase() === mac.toLowerCase(),
@@ -413,25 +414,10 @@ export default function EndpointDetailPage() {
   const STANDARD_ADMIN_ACCOUNTS = new Set(["Administrator", "abhishek"]);
   const SYSTEM_TASK_PREFIX = /^\\Microsoft\\/i;
 
-  // Software search/filter
+  // Software list (sorted alphabetically)
   const allSoftware = (rawData.installed_software ?? []) as SoftwareInfo[];
   const sortedAllSoftware = [...allSoftware].sort((a, b) =>
     (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase()),
-  );
-  const filteredSoftware = softwareSearch.trim()
-    ? sortedAllSoftware.filter(
-        (s) =>
-          s.name?.toLowerCase().includes(softwareSearch.toLowerCase()) ||
-          s.version?.toLowerCase().includes(softwareSearch.toLowerCase()) ||
-          s.publisher?.toLowerCase().includes(softwareSearch.toLowerCase()),
-      )
-    : sortedAllSoftware;
-  const SOFTWARE_PAGE_SIZE = 25;
-  const softwarePageCount = Math.max(1, Math.ceil(filteredSoftware.length / SOFTWARE_PAGE_SIZE));
-  const softwarePageClamped = Math.min(softwarePage, softwarePageCount - 1);
-  const visibleSoftware = filteredSoftware.slice(
-    softwarePageClamped * SOFTWARE_PAGE_SIZE,
-    (softwarePageClamped + 1) * SOFTWARE_PAGE_SIZE,
   );
 
   return (
@@ -608,33 +594,41 @@ export default function EndpointDetailPage() {
         </SectionCard>
       </div>
 
-      {/* Running Applications */}
+      {/* Running Processes & Services */}
       {(() => {
-        const apps = endpoint.running_apps ?? [];
-        const updatedAgo = endpoint.last_health_check
-          ? Math.round((Date.now() - endpoint.last_health_check) / 1000)
-          : null;
-        const filteredApps = appsSearch.trim()
-          ? apps.filter((p) => p.name.toLowerCase().includes(appsSearch.toLowerCase()))
-          : apps;
-        const sortedApps = [...filteredApps].sort((a, b) => {
-          const av = a[appsSortKey] as number | string;
-          const bv = b[appsSortKey] as number | string;
-          if (av < bv) return appsSortAsc ? -1 : 1;
-          if (av > bv) return appsSortAsc ? 1 : -1;
+        const procs = endpoint.running_apps ?? [];
+        const filteredProcs = procSearch.trim()
+          ? procs.filter((p) =>
+              p.name.toLowerCase().includes(procSearch.toLowerCase()) ||
+              (p.display_name ?? '').toLowerCase().includes(procSearch.toLowerCase()),
+            )
+          : procs;
+        const sortedProcs = [...filteredProcs].sort((a, b) => {
+          const av = a[procSortKey] as number | string;
+          const bv = b[procSortKey] as number | string;
+          if (av < bv) return procSortDir === 'asc' ? -1 : 1;
+          if (av > bv) return procSortDir === 'asc' ? 1 : -1;
           return 0;
         });
-        const toggleSort = (key: keyof ProcessInfo) => {
-          if (appsSortKey === key) {
-            setAppsSortAsc((v) => !v);
+        const PROC_PAGE_SIZE = 25;
+        const procPageCount = Math.max(1, Math.ceil(sortedProcs.length / PROC_PAGE_SIZE));
+        const procPageClamped = Math.min(procPage - 1, procPageCount - 1);
+        const visibleProcs = sortedProcs.slice(
+          procPageClamped * PROC_PAGE_SIZE,
+          (procPageClamped + 1) * PROC_PAGE_SIZE,
+        );
+        const toggleProcSort = (key: 'cpu_percent' | 'memory_mb' | 'name') => {
+          if (procSortKey === key) {
+            setProcSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
           } else {
-            setAppsSortKey(key);
-            setAppsSortAsc(key === "name");
+            setProcSortKey(key);
+            setProcSortDir(key === 'name' ? 'asc' : 'desc');
           }
+          setProcPage(1);
         };
-        const SortIcon = ({ col }: { col: keyof ProcessInfo }) =>
-          appsSortKey === col ? (
-            appsSortAsc ? (
+        const ProcSortIcon = ({ col }: { col: 'cpu_percent' | 'memory_mb' | 'name' }) =>
+          procSortKey === col ? (
+            procSortDir === 'asc' ? (
               <ChevronUp className="inline size-3" />
             ) : (
               <ChevronDown className="inline size-3" />
@@ -643,15 +637,14 @@ export default function EndpointDetailPage() {
         return (
           <SectionCard
             icon={<MonitorCog className="size-4" aria-hidden="true" />}
-            title="Running Applications"
-            description={
-              updatedAgo !== null
-                ? `Showing user applications · ${endpoint.process_count ?? apps.length} total processes · Updated ${updatedAgo} sec ago`
-                : `Showing user applications · ${endpoint.process_count ?? apps.length} total processes`
-            }
+            title="Running Processes & Services"
+            description="All active processes including background services"
             data-ocid="endpoint_detail.running_apps"
           >
-            {apps.length === 0 ? (
+            <p className="mb-3 text-xs text-muted-foreground">
+              Showing {filteredProcs.length} processes · {endpoint.process_count ?? 0} total · Updated {timeAgo(endpoint.last_health_check)} ago
+            </p>
+            {procs.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/60 px-4 py-10 text-center">
                 <Activity className="size-8 text-muted-foreground" aria-hidden="true" />
                 <p className="mt-2 text-sm font-medium text-foreground">
@@ -666,9 +659,9 @@ export default function EndpointDetailPage() {
                 <div className="mb-3">
                   <input
                     type="search"
-                    placeholder="Filter by process name…"
-                    value={appsSearch}
-                    onChange={(e) => setAppsSearch(e.target.value)}
+                    placeholder="Search by process name…"
+                    value={procSearch}
+                    onChange={(e) => { setProcSearch(e.target.value); setProcPage(1); }}
                     className="w-full rounded-md border border-border bg-background/60 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
@@ -678,63 +671,90 @@ export default function EndpointDetailPage() {
                       <tr className="border-b border-border">
                         <th
                           className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
-                          onClick={() => toggleSort("name")}
+                          onClick={() => toggleProcSort('name')}
                         >
-                          Process Name <SortIcon col="name" />
+                          Process Name <ProcSortIcon col="name" />
+                        </th>
+                        <th className="pb-2 text-left font-medium text-muted-foreground">PID</th>
+                        <th
+                          className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
+                          onClick={() => toggleProcSort('cpu_percent')}
+                        >
+                          CPU % <ProcSortIcon col="cpu_percent" />
                         </th>
                         <th
                           className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
-                          onClick={() => toggleSort("pid")}
+                          onClick={() => toggleProcSort('memory_mb')}
                         >
-                          PID <SortIcon col="pid" />
-                        </th>
-                        <th
-                          className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
-                          onClick={() => toggleSort("cpu_percent")}
-                        >
-                          CPU % <SortIcon col="cpu_percent" />
-                        </th>
-                        <th
-                          className="cursor-pointer pb-2 text-left font-medium text-muted-foreground hover:text-foreground"
-                          onClick={() => toggleSort("memory_mb")}
-                        >
-                          Memory (MB) <SortIcon col="memory_mb" />
+                          Memory (MB) <ProcSortIcon col="memory_mb" />
                         </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedApps.map((proc) => (
-                        <tr
-                          key={proc.pid}
-                          className="border-b border-border/50 last:border-0"
-                        >
-                          <td className="py-2 font-mono text-xs text-foreground">
-                            {proc.name}
-                          </td>
-                          <td className="py-2 font-mono text-xs text-muted-foreground">
-                            {proc.pid}
-                          </td>
-                          <td className="py-2 text-xs text-foreground">
-                            {proc.cpu_percent}%
-                          </td>
-                          <td className="py-2 text-xs text-foreground">
-                            {proc.memory_mb} MB
-                          </td>
-                        </tr>
-                      ))}
-                      {sortedApps.length === 0 && (
+                      {visibleProcs.map((proc) => {
+                        const cpuColor =
+                          proc.cpu_percent > 50
+                            ? 'text-destructive'
+                            : proc.cpu_percent > 20
+                              ? 'text-warning'
+                              : 'text-success';
+                        return (
+                          <tr key={proc.pid} className="border-b border-border/50 last:border-0">
+                            <td className="py-2">
+                              <span className="block text-xs font-medium text-foreground">
+                                {proc.display_name && proc.display_name !== proc.name
+                                  ? proc.display_name
+                                  : proc.name}
+                              </span>
+                              {proc.display_name && proc.display_name !== proc.name && (
+                                <span className="block font-mono text-[10px] text-muted-foreground">
+                                  {proc.name}
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 font-mono text-xs text-muted-foreground">{proc.pid}</td>
+                            <td className={`py-2 text-xs font-medium ${cpuColor}`}>{proc.cpu_percent}%</td>
+                            <td className="py-2 text-xs text-foreground">{proc.memory_mb} MB</td>
+                          </tr>
+                        );
+                      })}
+                      {sortedProcs.length === 0 && (
                         <tr>
-                          <td
-                            colSpan={4}
-                            className="py-6 text-center text-xs text-muted-foreground"
-                          >
-                            No results for "{appsSearch}"
+                          <td colSpan={4} className="py-6 text-center text-xs text-muted-foreground">
+                            No results for "{procSearch}"
                           </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
                 </div>
+                {procPageCount > 1 && (
+                  <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span>
+                      Showing {procPageClamped * PROC_PAGE_SIZE + 1}–
+                      {Math.min((procPageClamped + 1) * PROC_PAGE_SIZE, sortedProcs.length)} of {sortedProcs.length}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setProcPage((p) => Math.max(1, p - 1))}
+                        disabled={procPageClamped === 0}
+                        className="rounded px-2 py-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+                      >
+                        <ChevronUp className="size-3 -rotate-90" />
+                      </button>
+                      <span>Page {procPageClamped + 1} of {procPageCount}</span>
+                      <button
+                        type="button"
+                        onClick={() => setProcPage((p) => Math.min(procPageCount, p + 1))}
+                        disabled={procPageClamped >= procPageCount - 1}
+                        className="rounded px-2 py-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+                      >
+                        <ChevronDown className="size-3 -rotate-90" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </SectionCard>
@@ -1170,82 +1190,123 @@ export default function EndpointDetailPage() {
         </SectionCard>
       )}
 
-      {/* ── Section D: Installed Software (Windows) ── */}
+      {/* ── Section D: Installed Applications (Windows) ── */}
       {isWindows && allSoftware.length > 0 && (
         <SectionCard
           icon={<Package className="size-4" aria-hidden="true" />}
-          title="Installed Software"
-          description="Software inventory from last audit · sorted alphabetically"
+          title="Installed Applications"
+          description="Software inventory from last audit"
           data-ocid="endpoint_detail.installed_software"
         >
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <input
-              type="search"
-              placeholder="Search by name, version, or publisher…"
-              value={softwareSearch}
-              onChange={(e) => { setSoftwareSearch(e.target.value); setSoftwarePage(0); }}
-              className="flex-1 rounded-md border border-border bg-background/60 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-            <Badge className="shrink-0 rounded-full bg-muted text-muted-foreground">
-              {allSoftware.length} applications installed
-            </Badge>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="pb-2 text-left font-medium text-muted-foreground">Name</th>
-                  <th className="pb-2 text-left font-medium text-muted-foreground">Version</th>
-                  <th className="pb-2 text-left font-medium text-muted-foreground">Publisher</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleSoftware.map((sw, i) => (
-                  <tr key={i} className="border-b border-border/50 last:border-0">
-                    <td className="py-2 text-xs text-foreground">{sw.name}</td>
-                    <td className="py-2 font-mono text-xs text-muted-foreground">{sw.version ?? ""}</td>
-                    <td className="py-2 text-xs text-muted-foreground">{sw.publisher ?? ""}</td>
-                  </tr>
-                ))}
-                {filteredSoftware.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="py-6 text-center text-xs text-muted-foreground">
-                      No results for "{softwareSearch}"
-                    </td>
-                  </tr>
+          {(() => {
+            const runningApps = endpoint.running_apps ?? [];
+            const filteredApps = appSearch.trim()
+              ? sortedAllSoftware.filter(
+                  (s) =>
+                    s.name?.toLowerCase().includes(appSearch.toLowerCase()) ||
+                    s.version?.toLowerCase().includes(appSearch.toLowerCase()) ||
+                    s.publisher?.toLowerCase().includes(appSearch.toLowerCase()),
+                )
+              : sortedAllSoftware;
+            const APP_PAGE_SIZE = 25;
+            const appPageCount = Math.max(1, Math.ceil(filteredApps.length / APP_PAGE_SIZE));
+            const appPageClamped = Math.min(appPage - 1, appPageCount - 1);
+            const visibleApps = filteredApps.slice(
+              appPageClamped * APP_PAGE_SIZE,
+              (appPageClamped + 1) * APP_PAGE_SIZE,
+            );
+            const isAppRunning = (sw: SoftwareInfo): boolean => {
+              const firstName = (sw.name ?? '').trim().split(/\s+/)[0].toLowerCase();
+              if (!firstName) return false;
+              return runningApps.some(
+                (p) =>
+                  p.name.toLowerCase().includes(firstName) ||
+                  firstName.includes(p.name.toLowerCase()),
+              );
+            };
+            return (
+              <>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <input
+                    type="search"
+                    placeholder="Search by name, version, or publisher…"
+                    value={appSearch}
+                    onChange={(e) => { setAppSearch(e.target.value); setAppPage(1); }}
+                    className="flex-1 rounded-md border border-border bg-background/60 px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <Badge className="shrink-0 rounded-full bg-muted text-muted-foreground">
+                    {allSoftware.length} installed
+                  </Badge>
+                </div>
+                {filteredApps.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/60 px-4 py-10 text-center">
+                    <Package className="size-8 text-muted-foreground" aria-hidden="true" />
+                    <p className="mt-2 text-sm font-medium text-foreground">
+                      {appSearch ? `No results for "${appSearch}"` : 'No software inventory — run a daily audit'}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border">
+                            <th className="pb-2 text-left font-medium text-muted-foreground">Application Name</th>
+                            <th className="pb-2 text-left font-medium text-muted-foreground">Version</th>
+                            <th className="pb-2 text-left font-medium text-muted-foreground">Publisher</th>
+                            <th className="pb-2 text-left font-medium text-muted-foreground">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {visibleApps.map((sw, i) => (
+                            <tr key={i} className="border-b border-border/50 last:border-0">
+                              <td className="py-2 text-xs text-foreground">{sw.name}</td>
+                              <td className="py-2 font-mono text-xs text-muted-foreground">{sw.version ?? ""}</td>
+                              <td className="py-2 text-xs text-muted-foreground">{sw.publisher ?? ""}</td>
+                              <td className="py-2">
+                                {isAppRunning(sw) ? (
+                                  <Badge className="rounded-full text-xs bg-success/15 text-success">Running</Badge>
+                                ) : (
+                                  <Badge className="rounded-full text-xs bg-muted text-muted-foreground">Not running</Badge>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {appPageCount > 1 && (
+                      <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <span>
+                          Showing {appPageClamped * APP_PAGE_SIZE + 1}–
+                          {Math.min((appPageClamped + 1) * APP_PAGE_SIZE, filteredApps.length)} of {filteredApps.length}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setAppPage((p) => Math.max(1, p - 1))}
+                            disabled={appPageClamped === 0}
+                            className="rounded px-2 py-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+                          >
+                            <ChevronUp className="size-3 -rotate-90" />
+                          </button>
+                          <span>Page {appPageClamped + 1} of {appPageCount}</span>
+                          <button
+                            type="button"
+                            onClick={() => setAppPage((p) => Math.min(appPageCount, p + 1))}
+                            disabled={appPageClamped >= appPageCount - 1}
+                            className="rounded px-2 py-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+                          >
+                            <ChevronDown className="size-3 -rotate-90" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
-              </tbody>
-            </table>
-          </div>
-          {softwarePageCount > 1 && (
-            <div className="mt-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>
-                Showing {softwarePageClamped * SOFTWARE_PAGE_SIZE + 1}–
-                {Math.min((softwarePageClamped + 1) * SOFTWARE_PAGE_SIZE, filteredSoftware.length)} of {filteredSoftware.length}
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setSoftwarePage((p) => Math.max(0, p - 1))}
-                  disabled={softwarePageClamped === 0}
-                  className="rounded px-2 py-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
-                >
-                  <ChevronUp className="size-3 -rotate-90" />
-                </button>
-                <span>
-                  Page {softwarePageClamped + 1} of {softwarePageCount}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSoftwarePage((p) => Math.min(softwarePageCount - 1, p + 1))}
-                  disabled={softwarePageClamped >= softwarePageCount - 1}
-                  className="rounded px-2 py-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
-                >
-                  <ChevronDown className="size-3 -rotate-90" />
-                </button>
-              </div>
-            </div>
-          )}
+              </>
+            );
+          })()}
         </SectionCard>
       )}
 

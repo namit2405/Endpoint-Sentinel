@@ -57,6 +57,7 @@ export type HealthStatus = "healthy" | "warning" | "critical";
 
 export interface ProcessInfo {
   name: string;
+  display_name?: string;
   pid: number;
   cpu_percent: number;
   memory_mb: number;
