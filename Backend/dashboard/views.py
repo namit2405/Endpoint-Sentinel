@@ -237,6 +237,7 @@ def endpoints_status(request):
             "disk_details": ep.disk_details if hasattr(ep, 'disk_details') and ep.disk_details else [],
             "running_apps": ep.running_apps if ep.running_apps else [],
             "process_count": ep.process_count,
+            "installed_apps": ep.installed_apps if ep.installed_apps else [],
         })
 
         latest_report = reports.filter(

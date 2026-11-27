@@ -414,8 +414,8 @@ export default function EndpointDetailPage() {
   const STANDARD_ADMIN_ACCOUNTS = new Set(["Administrator", "abhishek"]);
   const SYSTEM_TASK_PREFIX = /^\\Microsoft\\/i;
 
-  // Software list (sorted alphabetically)
-  const allSoftware = (rawData.installed_software ?? []) as SoftwareInfo[];
+  // Software list (sorted alphabetically, from real-time health monitor)
+  const allSoftware = (endpoint.installed_apps ?? []) as SoftwareInfo[];
   const sortedAllSoftware = [...allSoftware].sort((a, b) =>
     (a.name ?? "").toLowerCase().localeCompare((b.name ?? "").toLowerCase()),
   );
@@ -1191,11 +1191,11 @@ export default function EndpointDetailPage() {
       )}
 
       {/* ── Section D: Installed Applications (Windows) ── */}
-      {isWindows && allSoftware.length > 0 && (
+      {isWindows && (
         <SectionCard
           icon={<Package className="size-4" aria-hidden="true" />}
           title="Installed Applications"
-          description="Software inventory from last audit"
+          description="Real-time software inventory from health monitor"
           data-ocid="endpoint_detail.installed_software"
         >
           {(() => {
@@ -1242,7 +1242,7 @@ export default function EndpointDetailPage() {
                   <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-background/60 px-4 py-10 text-center">
                     <Package className="size-8 text-muted-foreground" aria-hidden="true" />
                     <p className="mt-2 text-sm font-medium text-foreground">
-                      {appSearch ? `No results for "${appSearch}"` : 'No software inventory — run a daily audit'}
+                      {appSearch ? `No results for "${appSearch}"` : 'No application data yet — health monitor will update within 2 minutes'}
                     </p>
                   </div>
                 ) : (

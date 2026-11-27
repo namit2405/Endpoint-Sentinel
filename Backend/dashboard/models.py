@@ -195,6 +195,8 @@ class EndpointStatus(models.Model):
     process_count = models.IntegerField(null=True, blank=True)      # Active processes
     running_apps = models.JSONField(default=list, blank=True)
     # e.g. [{"name": "chrome.exe", "pid": 1234, "cpu_percent": 2.5, "memory_mb": 245.3}]
+    installed_apps = models.JSONField(default=list, blank=True)
+    # e.g. [{"name": "Google Chrome", "version": "120.0", "publisher": "Google LLC"}]
     
     # ── Security status ───────────────────────────────────────────────────
     firewall_active = models.BooleanField(null=True, blank=True)

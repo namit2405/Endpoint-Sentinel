@@ -266,6 +266,32 @@ function Collect-And-Send-Health {
             }
         }
     } catch { }
+    # Collect installed applications from registry
+    $installedApps = @()
+    try {
+        $regPaths = @(
+            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+        )
+        $seen = @{}
+        foreach ($regPath in $regPaths) {
+            Get-ItemProperty $regPath -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -and $_.DisplayName.Trim() -ne '' -and -not $_.SystemComponent } |
+            ForEach-Object {
+                $appName = $_.DisplayName.Trim()
+                if (-not $seen[$appName]) {
+                    $seen[$appName] = $true
+                    $installedApps += @{
+                        name = $appName
+                        version = if ($_.DisplayVersion) { $_.DisplayVersion.Trim() } else { '' }
+                        publisher = if ($_.Publisher) { $_.Publisher.Trim() } else { '' }
+                    }
+                }
+            }
+        }
+        $installedApps = $installedApps | Sort-Object name
+    } catch {}
 
     $fwJson = ConvertTo-ProductJson -products $fwProducts
     $avJson = ConvertTo-ProductJson -products $avProducts
@@ -276,8 +302,9 @@ function Collect-And-Send-Health {
     $AvProductsJson = if ($avProducts.Count -eq 0) { '[]' } elseif ($avProducts.Count -eq 1) { '[' + ($avProducts[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $avProducts | ConvertTo-Json -Compress -Depth 3 }
     $DiskDetailsJson = if ($diskDetails.Count -eq 0) { '[]' } elseif ($diskDetails.Count -eq 1) { '[' + ($diskDetails[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $diskDetails | ConvertTo-Json -Compress -Depth 3 }
     $ProcessDetailsJson = if ($topProcesses.Count -eq 0) { '[]' } elseif ($topProcesses.Count -eq 1) { '[' + ($topProcesses[0] | ConvertTo-Json -Compress -Depth 3) + ']' } else { $topProcesses | ConvertTo-Json -Compress -Depth 3 }
+    $InstalledAppsJson = if ($installedApps.Count -eq 0) { '[]' } elseif ($installedApps.Count -eq 1) { '[' + ($installedApps[0] | ConvertTo-Json -Compress -Depth 2) + ']' } else { $installedApps | ConvertTo-Json -Compress -Depth 2 }
 
-    $HealthPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"ip_address`":`"$ipValue`",`"cpu_percent`":$cpuPercent,`"memory_percent`":$memPercent,`"disk_percent`":$diskPercent,`"uptime_seconds`":$uptimeSeconds,`"firewall_active`":$(if($firewallActive){'true'}else{'false'}),`"firewall_products`":$FwProductsJson,`"antivirus_products`":$AvProductsJson,`"disk_details`":$DiskDetailsJson,`"process_count`":$processCount,`"running_apps`":$ProcessDetailsJson}"
+    $HealthPayload = "{`"hostname`":`"$hostnameValue`",`"mac_address`":`"$macValue`",`"os_type`":`"windows`",`"ip_address`":`"$ipValue`",`"cpu_percent`":$cpuPercent,`"memory_percent`":$memPercent,`"disk_percent`":$diskPercent,`"uptime_seconds`":$uptimeSeconds,`"firewall_active`":$(if($firewallActive){'true'}else{'false'}),`"firewall_products`":$FwProductsJson,`"antivirus_products`":$AvProductsJson,`"disk_details`":$DiskDetailsJson,`"process_count`":$processCount,`"running_apps`":$ProcessDetailsJson,`"installed_apps`":$InstalledAppsJson}"
 
     $ApiBase2 = $env:LOCAL_BASE_URL; if (-not $ApiBase2) { $ApiBase2 = "https://endpoint-dashboard.pntr.dev" }
     $ApiKey2 = $env:HEARTBEAT_API_KEY; if (-not $ApiKey2) { $ApiKey2 = "a3f9c2e1b8d7" }

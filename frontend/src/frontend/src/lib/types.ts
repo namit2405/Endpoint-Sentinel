@@ -149,6 +149,7 @@ export interface EndpointStatus {
   antivirus_products: SecurityProduct[];
   disk_details: DiskDetail[];
   running_apps: ProcessInfo[];
+  installed_apps: SoftwareInfo[];
   process_count: number | null;
   last_seen: number;
   last_health_check: number;

@@ -151,6 +151,10 @@ def health_monitoring(request):
         if isinstance(disk_details, str):
             import json as _json; disk_details = _json.loads(disk_details)
         endpoint.disk_details = disk_details if isinstance(disk_details, list) else []
+        installed_apps = health_data.get("installed_apps") or data.get("installed_apps") or []
+        if isinstance(installed_apps, str):
+            import json as _json; installed_apps = _json.loads(installed_apps)
+        endpoint.installed_apps = installed_apps if isinstance(installed_apps, list) else []
         endpoint.health_score, endpoint.health_status = calculate_health_score(
             endpoint.cpu_percent,
             endpoint.memory_percent,
