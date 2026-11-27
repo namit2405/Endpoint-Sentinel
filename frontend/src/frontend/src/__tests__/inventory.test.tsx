@@ -21,9 +21,14 @@ describe("Inventory page", () => {
       .getByRole("link", { name: "srv-web-01" })
       .closest("tr");
     if (!endpointRow) throw new Error("Endpoint row was not rendered");
-    expect(
-      within(endpointRow).getAllByRole("cell")[4],
-    ).toHaveTextContent(/\d+%/);
+    const columnHeaders = screen
+      .getAllByRole("columnheader")
+      .map((header) => header.textContent?.trim());
+    expect(columnHeaders.at(-1)).toBe("Disk Usage");
+    expect(columnHeaders.at(-2)).toContain("Mem %");
+    expect(within(endpointRow).getAllByRole("cell").at(-1)).toHaveTextContent(
+      /\d+%/,
+    );
     // CPU cores + model, RAM, updates, and disk usage columns.
     expect(screen.getAllByText("8 cores").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Intel Xeon E5-2680 v4").length).toBeGreaterThan(

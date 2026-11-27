@@ -461,7 +461,7 @@ export default function InventoryPage() {
           aria-label={`Sort by ${label} ${
             active && sortDir === "asc" ? "descending" : "ascending"
           }`}
-          className="inline-flex items-center gap-1 rounded font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          className="inline-flex w-full items-center justify-center gap-1 rounded font-medium text-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
         >
           {label}
           <Icon
@@ -891,37 +891,37 @@ export default function InventoryPage() {
             </Button>
           </div>
         ) : (
-          <Table className="min-w-[980px]">
+          <Table className="min-w-[980px] [&_td]:text-center [&_th]:text-center">
             <TableHeader>
               <TableRow className="bg-muted/40">
-                <TableHead>Hostname</TableHead>
-                <TableHead>OS</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>IP</TableHead>
-                <TableHead>Disk Usage</TableHead>
-                <TableHead>CPU</TableHead>
-                <TableHead>RAM</TableHead>
-                <TableHead>Updates</TableHead>
+                <TableHead className="text-center">Hostname</TableHead>
+                <TableHead className="text-center">OS</TableHead>
+                <TableHead className="text-center">Type</TableHead>
+                <TableHead className="text-center">IP</TableHead>
+                <TableHead className="text-center">CPU</TableHead>
+                <TableHead className="text-center">RAM</TableHead>
+                <TableHead className="text-center">Updates</TableHead>
                 <SortHeader
                   label="Security Health"
                   sortableKey="risk"
-                  className="text-right"
+                  className="text-center"
                 />
                 <SortHeader
                   label="Last seen"
                   sortableKey="lastSeen"
-                  className="text-right"
+                  className="text-center"
                 />
                 <SortHeader
                   label="CPU %"
                   sortableKey="cpu"
-                  className="text-right"
+                  className="text-center"
                 />
                 <SortHeader
                   label="Mem %"
                   sortableKey="memory"
-                  className="text-right"
+                  className="text-center"
                 />
+                <TableHead className="text-center">Disk Usage</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -956,9 +956,6 @@ export default function InventoryPage() {
                   <TableCell className="font-mono text-muted-foreground">
                     {e.ip_address}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground">
-                    {formatPercent(e.audit.hardware.diskPercent)}
-                  </TableCell>
                   <TableCell>
                     <span className="text-foreground">
                       {e.audit.hardware.cpuCores} cores
@@ -981,7 +978,7 @@ export default function InventoryPage() {
                       {e.audit.pendingUpdates}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell>
                     <span
                       data-ocid={`inventory.row.${i + 1}.risk`}
                       className={`inline-flex min-w-[2.5rem] items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold ${securityHealthScoreBg(
@@ -991,22 +988,25 @@ export default function InventoryPage() {
                       {e.audit.riskScore}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right text-muted-foreground">
+                  <TableCell className="text-muted-foreground">
                     {timeAgo(e.last_seen)}
                   </TableCell>
                   <TableCell
-                    className={`text-right font-mono ${riskScoreColor(
+                    className={`font-mono ${riskScoreColor(
                       e.cpu_percent,
                     )}`}
                   >
                     {formatPercent(e.cpu_percent)}
                   </TableCell>
                   <TableCell
-                    className={`text-right font-mono ${riskScoreColor(
+                    className={`font-mono ${riskScoreColor(
                       e.memory_percent,
                     )}`}
                   >
                     {formatPercent(e.memory_percent)}
+                  </TableCell>
+                  <TableCell className="font-mono text-muted-foreground">
+                    {formatPercent(e.audit.hardware.diskPercent)}
                   </TableCell>
                 </TableRow>
               ))}
