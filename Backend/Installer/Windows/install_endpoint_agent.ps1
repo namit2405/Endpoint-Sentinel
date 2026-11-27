@@ -845,17 +845,9 @@ function Collect-And-Send-Health {
             $name = $proc.ProcessName
             # Skip known system processes
             if ($systemProcessNames -contains $name) { return $false }
-            # Include if has a visible window (GUI app)
-            if ($proc.MainWindowHandle -ne [IntPtr]::Zero) { return $true }
-            # Include if path is under Program Files or Users (user-installed apps)
-            try {
-                $path = $proc.Path
-                if ($path -and (
-                    $path -like 'C:\Program Files\*' -or
-                    $path -like 'C:\Program Files (x86)\*' -or
-                    $path -like 'C:\Users\*'
-                )) { return $true }
-            } catch {}
+            # Only include processes with a visible window — this is the true definition
+            # of a running application. Background services never have windows.
+            if ($proc.MainWindowHandle -ne [IntPtr]::Zero -and $proc.MainWindowTitle -ne '') { return $true }
             return $false
         }
 
